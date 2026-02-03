@@ -1,160 +1,246 @@
 #include <ESP32Servo.h>
 
-// ===== BTS7960 Motor Driver =====
-// ESP32 PWM channels: 0-15 available
-#define RPWM 18  // GPIO18 - PWM cho chieu tien
-#define LPWM 19  // GPIO19 - PWM cho chieu lui
-#define REN  21  // GPIO21 - Enable phai
-#define LEN  22  // GPIO22 - Enable trai
+#define RPWM 18
+#define LPWM 19
+#define REN 21
+#define LEN 22
 
-// ===== SERVO =====
-#define SERVO_PIN 23  // GPIO23 - Servo dieu khien huong
+#define SERVO_PIN 23
 
-// ===== ULTRASONIC Sensor (Front) =====
-#define TRIG_FRONT 16  // GPIO16 - Trigger cảm biến siêu âm phía trước
-#define ECHO_FRONT 17  // GPIO17 - Echo cảm biến siêu âm phía trước
+#define TRIG_FRONT 16
+#define ECHO_FRONT 17
 
-// ===== ULTRASONIC Sensor (Back) =====
-#define TRIG_BACK 25  // GPIO25 - Trigger cảm biến siêu âm phía sau
-#define ECHO_BACK 26  // GPIO26 - Echo cảm biến siêu âm phía sau
+#define TRIG_BACK 25
+#define ECHO_BACK 26
 
-#define AUTO_SPEED 80
+#define AUTO_SPEED 100
 
-#define STOP_DISTANCE 15   // <= 5cm: Dừng dần
-#define SLOW_DISTANCE 30  // <= 15cm: Giảm tốc dần
-#define TURN_DISTANCE 69  // <= 40cm: Quay trái 60 độ
-#define SAFE_DISTANCE 70  // > 40cm: chạy bình thường
+#define STOP_SPEED 0
+#define MIN_RUN_SPEED 85
+#define CRUISE_SPEED 95
+#define FAST_SPEED 110
 
-// PWM channels cho ESP32
+#define STOP_DISTANCE 10
+#define SLOW_DISTANCE 20
+#define TURN_DISTANCE 30
+#define PREPARE_DISTANCE 50
+
+#define BACK_DANGER_DISTANCE 30
+#define BACK_SPEED 100
+
 #define PWM_CHANNEL_RPWM 0
 #define PWM_CHANNEL_LPWM 1
-#define PWM_FREQ 1000      // 1 kHz
-#define PWM_RESOLUTION 8   // 8-bit (0-255)
-#define PWM_TIMER_RPWM 0   // Timer cho RPWM
-#define PWM_TIMER_LPWM 1   // Timer cho LPWM
+#define PWM_FREQ 1000
+#define PWM_RESOLUTION 8
+#define PWM_TIMER_RPWM 0
+#define PWM_TIMER_LPWM 1
 
 Servo myServo;
 
+enum State
+{
+  NORMAL,
+  BACKING,
+  TURNING,
+  RESUMING
+};
+
+State currentState = NORMAL;
+unsigned long stateStartTime = 0;
+const unsigned long BACK_TIME = 1500;
+const unsigned long TURN_TIME = 2000;
+
 int currentSpeed = 0;
-int targetSpeed = 0;  // Tốc độ mục tiêu cho smooth transition
-int servoAngle = 90;  // Góc servo hiện tại (90 = giữa)
-int targetServoAngle = 90;  // Góc servo mục tiêu
-bool turnDirection = true;  // true = phải, false = trái
+int targetSpeed = 0;
+int servoAngle = 90;
+int targetServoAngle = 90;
+bool turnDirection = true;
 
-// Filter cho ultrasonic để tránh nhiễu
 long lastFrontDistance = 999;
-const int FILTER_SAMPLES = 3;  // Số mẫu filter
+const int FILTER_SAMPLES = 3;
 
-long readDistance(int trigPin, int echoPin) {
+long readDistance(int trigPin, int echoPin)
+{
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
 
-  // Timeout 25ms thay vì 30ms để nhanh hơn
   long duration = pulseIn(echoPin, HIGH, 25000);
-  if (duration == 0) return 999;
+  if (duration == 0)
+    return 999;
   long distance = duration * 0.034 / 2;
-  
-  // Giới hạn khoảng cách hợp lý (2-400cm)
-  if (distance < 2 || distance > 400) return 999;
+
+  if (distance < 2 || distance > 400)
+    return 999;
   return distance;
 }
 
-long readFrontDistance() {
+long readFrontDistance()
+{
   long distance = readDistance(TRIG_FRONT, ECHO_FRONT);
-  
-  // Simple filter: nếu thay đổi quá lớn thì dùng giá trị cũ
-  if (abs(distance - lastFrontDistance) > 50 && lastFrontDistance < 999) {
+
+  if (abs(distance - lastFrontDistance) > 50 && lastFrontDistance < 999)
+  {
     distance = lastFrontDistance;
   }
-  
+
   lastFrontDistance = distance;
   return distance;
 }
 
-long readBackDistance() {
+long readBackDistance()
+{
   return readDistance(TRIG_BACK, ECHO_BACK);
 }
 
-void setup() {
-  // Khoi tao Serial
+void setup()
+{
+
   Serial.begin(115200);
   Serial.println("=== KHOI TAO HE THONG ESP32 ===");
 
-  // Cau hinh PWM channels cho BTS7960 (dung timer 0 va 1)
   ledcSetup(PWM_CHANNEL_RPWM, PWM_FREQ, PWM_RESOLUTION);
   ledcSetup(PWM_CHANNEL_LPWM, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(RPWM, PWM_CHANNEL_RPWM);
   ledcAttachPin(LPWM, PWM_CHANNEL_LPWM);
 
-  // Cau hinh enable pins
   pinMode(REN, OUTPUT);
   pinMode(LEN, OUTPUT);
   digitalWrite(REN, HIGH);
   digitalWrite(LEN, HIGH);
 
-  // Cau hinh Ultrasonic (Front)
   pinMode(TRIG_FRONT, OUTPUT);
   pinMode(ECHO_FRONT, INPUT);
 
-  // Cau hinh Ultrasonic (Back)
   pinMode(TRIG_BACK, OUTPUT);
   pinMode(ECHO_BACK, INPUT);
 
-  // Khoi tao Servo (dung timer 2 va 3 de tranh conflict voi PWM motor)
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
-  myServo.setPeriodHertz(50);  // Standard 50Hz servo
-  myServo.attach(SERVO_PIN, 500, 2400);  // Min 500us, Max 2400us
+  myServo.setPeriodHertz(50);
+  myServo.attach(SERVO_PIN, 500, 2400);
   myServo.write(90);
-  delay(500);  // Cho servo on dinh
+  delay(500);
 
   Serial.println("=== HE THONG SAN SANG ===");
 }
 
-void loop() {
+void loop()
+{
   long frontDistance = readFrontDistance();
   long backDistance = readBackDistance();
+  unsigned long currentTime = millis();
 
-  // Logic điều khiển dựa trên khoảng cách
-  if (frontDistance <= STOP_DISTANCE) {
-    // <= 5cm: Dừng dần (giảm tốc độ từ từ về 0)
-    targetSpeed = 0;
-    targetServoAngle = 30;  // Giữ nguyên quay trái 60°
-    
-  } else if (frontDistance <= SLOW_DISTANCE) {
-    // 6-15cm: Giảm tốc dần (map tốc độ theo khoảng cách)
-    targetSpeed = map(frontDistance, STOP_DISTANCE, SLOW_DISTANCE, 30, 100);
-    targetSpeed = constrain(targetSpeed, 30, 100);
-    targetServoAngle = 30;  // Giữ nguyên quay trái 60°
-    
-  } else if (frontDistance <= TURN_DISTANCE) {
-    // 16-40cm: Quay trái 60 độ và GIỮ NGUYÊN
-    targetSpeed = 80;  // Giảm tốc độ xuống 80 khi rẽ để giảm dòng điện
-    targetServoAngle = 30;  // Mục tiêu: Quay trái 60 độ (90 - 60 = 30)
-    
-  } else {
-    // > 40cm: Chạy bình thường, quay về giữa
-    targetSpeed = AUTO_SPEED;
-    targetServoAngle = 90;  // Mục tiêu: Quay về giữa
+  switch (currentState)
+  {
+  case NORMAL:
+
+    if (frontDistance < STOP_DISTANCE)
+    {
+
+      if (backDistance > BACK_DANGER_DISTANCE)
+      {
+
+        currentState = BACKING;
+        stateStartTime = currentTime;
+        targetSpeed = -BACK_SPEED;
+        servoAngle = 90;
+        targetServoAngle = 90;
+        myServo.write(90);
+      }
+      else
+      {
+
+        targetSpeed = STOP_SPEED;
+        targetServoAngle = 90;
+      }
+    }
+    else if (frontDistance < SLOW_DISTANCE)
+    {
+
+      targetSpeed = map(frontDistance, STOP_DISTANCE, SLOW_DISTANCE, MIN_RUN_SPEED, FAST_SPEED);
+      targetSpeed = constrain(targetSpeed, MIN_RUN_SPEED, FAST_SPEED);
+      targetServoAngle = 30;
+    }
+    else if (frontDistance < TURN_DISTANCE)
+    {
+
+      targetSpeed = MIN_RUN_SPEED;
+      targetServoAngle = 30;
+    }
+    else if (frontDistance < PREPARE_DISTANCE)
+    {
+
+      targetSpeed = CRUISE_SPEED;
+      targetServoAngle = 50;
+    }
+    else
+    {
+
+      targetSpeed = AUTO_SPEED;
+      targetServoAngle = 90;
+    }
+    break;
+
+  case BACKING:
+
+    targetSpeed = -BACK_SPEED;
+    targetServoAngle = 90;
+
+    if (currentTime - stateStartTime >= BACK_TIME || backDistance < BACK_DANGER_DISTANCE)
+    {
+
+      currentState = TURNING;
+      stateStartTime = currentTime;
+    }
+    break;
+
+  case TURNING:
+
+    targetSpeed = MIN_RUN_SPEED;
+    targetServoAngle = 30;
+
+    if (currentTime - stateStartTime >= TURN_TIME)
+    {
+
+      currentState = RESUMING;
+    }
+    break;
+
+  case RESUMING:
+
+    targetSpeed = CRUISE_SPEED;
+    targetServoAngle = 30;
+
+    if (frontDistance > PREPARE_DISTANCE)
+    {
+      currentState = NORMAL;
+    }
+    break;
   }
 
-  // Smooth servo transition - Quay servo từ từ để tránh dòng điện đột ngột
   smoothServoTransition();
-  
-  // Smooth speed transition - Thay đổi tốc độ dần dần
+
+  if (abs(servoAngle - targetServoAngle) > 15)
+  {
+    if (targetSpeed > MIN_RUN_SPEED)
+    {
+      targetSpeed = MIN_RUN_SPEED;
+    }
+  }
+
   smoothSpeedTransition();
 
   showDebug(frontDistance, backDistance);
-  
-  // Tăng delay để giảm tải cho CPU và tránh watchdog timeout
+
   delay(100);
-  yield();  // Feed watchdog
+  yield();
 }
 
-void showDebug(long frontDistance, long backDistance) {
+void showDebug(long frontDistance, long backDistance)
+{
   Serial.print("Front: ");
   Serial.print(frontDistance);
   Serial.print(" cm | Back: ");
@@ -165,62 +251,122 @@ void showDebug(long frontDistance, long backDistance) {
   Serial.print(targetSpeed);
   Serial.print(" | Servo: ");
   Serial.print(servoAngle);
-  Serial.print("° | Status: ");
+  Serial.print("° | State: ");
 
-  if (frontDistance <= STOP_DISTANCE) {
-    Serial.println("STOPPING");
-  } else if (frontDistance <= SLOW_DISTANCE) {
-    Serial.println("SLOWING");
-  } else if (frontDistance <= TURN_DISTANCE) {
-    Serial.println("TURN LEFT 60°");
-  } else {
-    Serial.println("FORWARD");
+  switch (currentState)
+  {
+  case NORMAL:
+    if (frontDistance < STOP_DISTANCE)
+    {
+      Serial.println("STOP!");
+    }
+    else if (frontDistance < SLOW_DISTANCE)
+    {
+      Serial.println("SLOWING");
+    }
+    else if (frontDistance < TURN_DISTANCE)
+    {
+      Serial.println("TURNING");
+    }
+    else if (frontDistance < PREPARE_DISTANCE)
+    {
+      Serial.println("PREPARE");
+    }
+    else
+    {
+      Serial.println("FORWARD");
+    }
+    break;
+  case BACKING:
+    Serial.println("BACKING UP!");
+    break;
+  case TURNING:
+    Serial.println("TURNING SHARP!");
+    break;
+  case RESUMING:
+    Serial.println("RESUMING...");
+    break;
   }
 }
 
-void smoothServoTransition() {
-  // Quay servo từ từ để tránh dòng điện đột ngột gây reset
-  int servoStep = 3;  // Quay 3 độ mỗi lần (100ms)
-  
-  if (servoAngle < targetServoAngle) {
+void smoothServoTransition()
+{
+
+  int servoStep = 6;
+
+  if (servoAngle < targetServoAngle)
+  {
     servoAngle += servoStep;
-    if (servoAngle > targetServoAngle) servoAngle = targetServoAngle;
-  } else if (servoAngle > targetServoAngle) {
-    servoAngle -= servoStep;
-    if (servoAngle < targetServoAngle) servoAngle = targetServoAngle;
+    if (servoAngle > targetServoAngle)
+      servoAngle = targetServoAngle;
   }
-  
+  else if (servoAngle > targetServoAngle)
+  {
+    servoAngle -= servoStep;
+    if (servoAngle < targetServoAngle)
+      servoAngle = targetServoAngle;
+  }
+
   myServo.write(servoAngle);
 }
 
-void smoothSpeedTransition() {
-  // Thay đổi tốc độ dần dần thay vì đột ngột
-  int speedStep = 10;  // Thay đổi 10 đơn vị mỗi lần (100ms)
-  
-  if (currentSpeed < targetSpeed) {
-    // Tăng tốc
-    currentSpeed += speedStep;
-    if (currentSpeed > targetSpeed) currentSpeed = targetSpeed;
-  } else if (currentSpeed > targetSpeed) {
-    // Giảm tốc
-    currentSpeed -= speedStep;
-    if (currentSpeed < targetSpeed) currentSpeed = targetSpeed;
+void smoothSpeedTransition()
+{
+
+  int speedStep = 15;
+
+  if (targetSpeed > 0 && targetSpeed < MIN_RUN_SPEED)
+  {
+    targetSpeed = MIN_RUN_SPEED;
   }
-  
-  // Áp dụng tốc độ mới
-  if (currentSpeed > 0) {
+  if (targetSpeed < 0 && targetSpeed > -MIN_RUN_SPEED)
+  {
+    targetSpeed = -MIN_RUN_SPEED;
+  }
+
+  if (currentSpeed < targetSpeed)
+  {
+
+    currentSpeed += speedStep;
+    if (currentSpeed > targetSpeed)
+      currentSpeed = targetSpeed;
+  }
+  else if (currentSpeed > targetSpeed)
+  {
+
+    currentSpeed -= speedStep;
+    if (currentSpeed < targetSpeed)
+      currentSpeed = targetSpeed;
+  }
+
+  if (currentSpeed > 0)
+  {
     moveForward(currentSpeed);
-  } else {
+  }
+  else if (currentSpeed < 0)
+  {
+    moveBackward(-currentSpeed);
+  }
+  else
+  {
     stopMotor();
   }
 }
 
-void moveForward(int pwm) {
+void moveForward(int pwm)
+{
   ledcWrite(PWM_CHANNEL_RPWM, pwm);
   ledcWrite(PWM_CHANNEL_LPWM, 0);
 }
 
-void stopMotor() {
+void moveBackward(int pwm)
+{
+  ledcWrite(PWM_CHANNEL_RPWM, 0);
+  ledcWrite(PWM_CHANNEL_LPWM, pwm);
+}
+
+void stopMotor()
+{
   ledcWrite(PWM_CHANNEL_RPWM, 0);
   ledcWrite(PWM_CHANNEL_LPWM, 0);
 }
