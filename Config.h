@@ -30,12 +30,12 @@
 
 /* ================== SPEED ================== */
 #define STOP_SPEED 0
-#define MIN_RUN_SPEED 115
-#define CRUISE_SPEED 120
-#define FAST_SPEED 130
-#define TURN_BOOST 142         // Cua vừa (góc 60-80°)
-#define SHARP_TURN_BOOST 165     // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát
-#define BACK_SPEED 120
+#define MIN_RUN_SPEED 101
+#define CRUISE_SPEED 111
+#define FAST_SPEED 115
+#define TURN_BOOST 150       // Cua vừa (góc 60-80°)
+#define SHARP_TURN_BOOST 161   // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát
+#define BACK_SPEED 123
 
 /* ================== DISTANCE ================== */
 #define STOP_DISTANCE     20
