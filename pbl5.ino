@@ -1,105 +1,275 @@
 #include <ESP32Servo.h>
+#include <Wire.h>
+#include <MPU6050_light.h>
 
+/* ================== MPU6050 ================== */
+#define SDA_PIN 32
+#define SCL_PIN 33
+#define COLLISION_THRESHOLD 2.0
+#define TILT_THRESHOLD 20.0
+
+/* ================== BTS7960 ================== */
 #define RPWM 18
 #define LPWM 19
 #define REN 21
 #define LEN 22
 
+/* ================== SERVO ================== */
 #define SERVO_PIN 23
 
+/* ================== ULTRASONIC ================== */
 #define TRIG_FRONT 16
 #define ECHO_FRONT 17
+#define TRIG_BACK  25
+#define ECHO_BACK  26
 
-#define TRIG_BACK 25
-#define ECHO_BACK 26
-
-#define AUTO_SPEED 100
-
-#define STOP_SPEED 0
-#define MIN_RUN_SPEED 90
-#define CRUISE_SPEED 100
-#define FAST_SPEED 125
-
-#define STOP_DISTANCE 20
-#define SLOW_DISTANCE 30
-#define TURN_DISTANCE 45
-#define PREPARE_DISTANCE 50
-#define TURN_BOOST 105
-#define BACK_DANGER_DISTANCE 30
-#define BACK_SPEED 100
-
+/* ================== PWM ================== */
 #define PWM_CHANNEL_RPWM 0
 #define PWM_CHANNEL_LPWM 1
 #define PWM_FREQ 1000
 #define PWM_RESOLUTION 8
-#define PWM_TIMER_RPWM 0
-#define PWM_TIMER_LPWM 1
 
-Servo myServo;
+/* ================== SPEED ================== */
+#define STOP_SPEED 0
+#define MIN_RUN_SPEED 110
+#define CRUISE_SPEED 115
+#define FAST_SPEED 127
+#define TURN_BOOST 120
+#define BACK_SPEED 115
 
-enum State
-{
+/* ================== DISTANCE ================== */
+#define STOP_DISTANCE     20
+#define SLOW_DISTANCE     30
+#define TURN_DISTANCE     45
+#define PREPARE_DISTANCE  60
+#define BACK_DANGER_DISTANCE 20
+
+/* ================== TIME ================== */
+#define BACK_TIME 3000
+#define TURN_TIME 2000
+
+/* ================== STATE ================== */
+enum State {
+  INIT,
   NORMAL,
+  SLOW,
+  TURN,
+  STOP,
   BACKING,
   TURNING,
   RESUMING
 };
 
-State currentState = NORMAL;
+State currentState = INIT;
 unsigned long stateStartTime = 0;
-const unsigned long BACK_TIME = 4000;   // Lùi 2.5 giây - KHÔNG kiểm tra khoảng cách trong khi lùi
-const unsigned long TURN_TIME = 2000;   // Rẽ 2 giây
+
+/* ================== GLOBAL ================== */
+Servo myServo;
+MPU6050 mpu(Wire);
 
 int currentSpeed = 0;
 int targetSpeed = 0;
 int servoAngle = 90;
 int targetServoAngle = 90;
-bool turnDirection = true;
 
-long lastFrontDistance = 999;
-const int FILTER_SAMPLES = 3;
+// MPU6050 data
+float currentAngleX = 0;    // Góc nghiêng ngang (trái/phải)
+float currentAngleY = 0;    // Góc nghiêng dọc (trước/sau)
+float currentAccelY = 0;    // Gia tốc ngang (ly tâm)
+float lastAccelMagnitude = 0;
 
-long readDistance(int trigPin, int echoPin)
-{
-  digitalWrite(trigPin, LOW);
+// Differential steering
+int leftMotorSpeed = 0;
+int rightMotorSpeed = 0;
+
+// Random turn direction
+bool turnRight = true;  // true = quay phải, false = quay trái
+
+/* ================================================= */
+/* ================= ULTRASONIC ==================== */
+/* ================================================= */
+
+long readDistanceOnce(int trig, int echo) {
+  digitalWrite(trig, LOW);
   delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
+  digitalWrite(trig, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
+  digitalWrite(trig, LOW);
 
-  long duration = pulseIn(echoPin, HIGH, 25000);
-  if (duration == 0)
-    return 999;
-  long distance = duration * 0.034 / 2;
+  long duration = pulseIn(echo, HIGH, 25000);
+  if (duration == 0) return 999;
 
-  if (distance < 2 || distance > 400)
-    return 999;
-  return distance;
+  long dist = duration * 0.034 / 2;
+  if (dist < 2 || dist > 300) return 999;
+  return dist;
 }
 
-long readFrontDistance()
-{
-  long distance = readDistance(TRIG_FRONT, ECHO_FRONT);
-
-  if (abs(distance - lastFrontDistance) > 50 && lastFrontDistance < 999)
-  {
-    distance = lastFrontDistance;
+/* Median filter – chống nhiễu */
+long readDistanceFiltered(int trig, int echo) {
+  long d[3];
+  for (int i = 0; i < 3; i++) {
+    d[i] = readDistanceOnce(trig, echo);
+    delay(5);
   }
 
-  lastFrontDistance = distance;
-  return distance;
+  // sort
+  for (int i = 0; i < 2; i++)
+    for (int j = i + 1; j < 3; j++)
+      if (d[i] > d[j]) {
+        long t = d[i];
+        d[i] = d[j];
+        d[j] = t;
+      }
+
+  return d[1]; // median
 }
 
-long readBackDistance()
-{
-  return readDistance(TRIG_BACK, ECHO_BACK);
+long readFrontDistance() {
+  return readDistanceFiltered(TRIG_FRONT, ECHO_FRONT);
 }
 
-void setup()
-{
-  // Serial.begin(115200);
-  // Serial.println("=== KHOI TAO HE THONG ESP32 ===");
+long readBackDistance() {
+  return readDistanceFiltered(TRIG_BACK, ECHO_BACK);
+}
 
+/* ================================================= */
+/* ================= MPU6050 ======================= */
+/* ================================================= */
+
+void updateMPU6050() {
+  mpu.update();
+  
+  // Đọc gia tốc (đơn vị: g)
+  float ax = mpu.getAccX();
+  float ay = mpu.getAccY();
+  float az = mpu.getAccZ();
+  
+  // Tính độ lớn gia tốc tổng
+  float accelMagnitude = sqrt(ax * ax + ay * ay + az * az);
+  
+  // Phát hiện va chạm đột ngột
+  float accelChange = abs(accelMagnitude - lastAccelMagnitude);
+  if (accelChange > COLLISION_THRESHOLD) {
+    Serial.println("!!! VA CHAM PHAT HIEN !!!");
+    targetSpeed = STOP_SPEED;
+    delay(2000);
+  }
+  
+  // Đọc góc nghiêng
+  currentAngleX = mpu.getAngleX();  // Nghiêng trái/phải
+  currentAngleY = mpu.getAngleY();  // Nghiêng trước/sau
+  currentAccelY = ay;               // Gia tốc ngang (ly tâm)
+  
+  // Phát hiện nghiêng nguy hiểm
+  if (abs(currentAngleX) > TILT_THRESHOLD || abs(currentAngleY) > TILT_THRESHOLD) {
+    Serial.print("!!! NGHIENG NGUY HIEM: X=");
+    Serial.print(currentAngleX);
+    Serial.print("° Y=");
+    Serial.print(currentAngleY);
+    Serial.println("° !!!");
+    targetSpeed = STOP_SPEED;
+    delay(2000);
+  }
+  
+  lastAccelMagnitude = accelMagnitude;
+}
+
+/* ================================================= */
+/* ========= DIFFERENTIAL STEERING ================ */
+/* ================================================= */
+
+// Tính tốc độ motor trái/phải dựa trên góc servo và dữ liệu MPU6050
+void calculateDifferentialSteering(int baseSpeed) {
+  if (baseSpeed == 0) {
+    leftMotorSpeed = 0;
+    rightMotorSpeed = 0;
+    return;
+  }
+  
+  // Tính độ lệch từ góc servo (90° = thẳng)
+  int servoDeviation = servoAngle - 90;
+  
+  // === BÙ TRỪ GÓC NGHIÊNG NGANG ===
+  // Nếu xe nghiêng trái → Tăng tốc motor trái để cân bằng
+  // Nếu xe nghiêng phải → Tăng tốc motor phải để cân bằng
+  float tiltCompensation = currentAngleX * 0.3;  // Mỗi 1° nghiêng → 0.3% chênh lệch
+  
+  // === ĐIỀU CHỈNH THEO GIA TỐC LY TÂM ===
+  // Khi gia tốc ly tâm lớn → Giảm chênh lệch tốc độ để tránh trượt
+  float centrifugalFactor = 1.0;
+  if (abs(currentAccelY) > 0.5) {
+    centrifugalFactor = 0.7;  // Giảm 30% độ chênh lệch khi gia tốc lớn
+  }
+  
+  // === ĐIỀU CHỈNH THEO GÓC DỐC ===
+  // Xuống dốc → Tăng chênh lệch để rẽ tốt hơn
+  // Lên dốc → Giảm chênh lệch để tránh trượt
+  float slopeCompensation = 0;
+  if (currentAngleY < -10) {  // Xuống dốc
+    slopeCompensation = abs(currentAngleY + 10) * 0.5;
+  } else if (currentAngleY > 10) {  // Lên dốc
+    slopeCompensation = -abs(currentAngleY - 10) * 0.3;
+  }
+  
+  // Tính tỷ lệ chênh lệch tốc độ (0-100%)
+  // servoDeviation: -60° đến +60° (rẽ phải đến rẽ trái)
+  float steeringRatio = (servoDeviation / 60.0) * centrifugalFactor;
+  steeringRatio += (tiltCompensation / 100.0);  // Thêm bù trừ nghiêng
+  steeringRatio += (slopeCompensation / 100.0); // Thêm bù trừ dốc
+  steeringRatio = constrain(steeringRatio, -1.0, 1.0);
+  
+  // Tính tốc độ từng motor
+  if (baseSpeed > 0) {  // Tiến
+    if (steeringRatio > 0) {  // Rẽ trái (servo > 90°)
+      leftMotorSpeed = baseSpeed * (1.0 - abs(steeringRatio));
+      rightMotorSpeed = baseSpeed;
+    } else {  // Rẽ phải (servo < 90°)
+      leftMotorSpeed = baseSpeed;
+      rightMotorSpeed = baseSpeed * (1.0 - abs(steeringRatio));
+    }
+  } else {  // Lùi (đảo chiều steering)
+    int absSpeed = abs(baseSpeed);
+    if (steeringRatio > 0) {  // Lùi + rẽ trái
+      leftMotorSpeed = -absSpeed;
+      rightMotorSpeed = -absSpeed * (1.0 - abs(steeringRatio));
+    } else {  // Lùi + rẽ phải
+      leftMotorSpeed = -absSpeed * (1.0 - abs(steeringRatio));
+      rightMotorSpeed = -absSpeed;
+    }
+  }
+  
+  // Giới hạn tốc độ trong phạm vi PWM
+  leftMotorSpeed = constrain(leftMotorSpeed, -255, 255);
+  rightMotorSpeed = constrain(rightMotorSpeed, -255, 255);
+}
+
+/* ================================================= */
+/* ================= SETUP ========================= */
+/* ================================================= */
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("=== KHOI TAO HE THONG ESP32 + MPU6050 ===");
+  
+  // Khởi tạo I2C cho MPU6050
+  Wire.begin(SDA_PIN, SCL_PIN);
+  
+  // Khởi tạo MPU6050
+  byte status = mpu.begin();
+  Serial.print("MPU6050 status: ");
+  Serial.println(status);
+  
+  if (status != 0) {
+    Serial.println("!!! LOI: Khong ket noi duoc MPU6050 !!!");
+    Serial.println("Kiem tra day noi SDA/SCL va nguon cap 3.3V");
+    while (1) { delay(1000); }
+  }
+  
+  Serial.println("Dang hieu chuan MPU6050... Giu xe yen!");
+  delay(1000);
+  mpu.calcOffsets();  // Hiệu chuẩn (xe phải đứng yên)
+  Serial.println("Hieu chuan hoan tat!");
+  
   ledcSetup(PWM_CHANNEL_RPWM, PWM_FREQ, PWM_RESOLUTION);
   ledcSetup(PWM_CHANNEL_LPWM, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(RPWM, PWM_CHANNEL_RPWM);
@@ -112,262 +282,241 @@ void setup()
 
   pinMode(TRIG_FRONT, OUTPUT);
   pinMode(ECHO_FRONT, INPUT);
-
   pinMode(TRIG_BACK, OUTPUT);
   pinMode(ECHO_BACK, INPUT);
 
-  // Khởi tạo servo
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
   myServo.setPeriodHertz(50);
   myServo.attach(SERVO_PIN, 500, 2400);
-  delay(100);  // Chờ servo attach xong
-  
-  // Reset servo về vị trí thẳng (90°) - Gửi tín hiệu 2 lần để chắc chắn
-  servoAngle = 90;
-  targetServoAngle = 90;
-  myServo.write(90);
   delay(500);
-  myServo.write(90);  // Gửi lại lần 2
-  delay(1000);  // Chờ servo về vị trí thẳng
+  myServo.write(90);
 
-  // Serial.println("=== HE THONG SAN SANG ===");
+  // Khởi tạo random seed
+  randomSeed(analogRead(0) + analogRead(4) + micros());
+  
+  currentState = NORMAL;
+  
+  Serial.println("=== HE THONG SAN SANG ===");
 }
 
-void loop()
-{
-  long frontDistance = readFrontDistance();
-  long backDistance = readBackDistance();
-  unsigned long currentTime = millis();
+/* ================================================= */
+/* ================= LOOP ========================== */
+/* ================================================= */
 
-  switch (currentState)
-  {
+void loop() {
+  // Cập nhật dữ liệu MPU6050
+  updateMPU6050();
+  
+  long frontDist = readFrontDistance();
+  long backDist  = readBackDistance();
+  unsigned long now = millis();
+
+  switch (currentState) {
+
   case NORMAL:
-    // Chế độ bình thường: Logic tránh vật cản theo khoảng cách
-    
-    if (frontDistance < STOP_DISTANCE) {
-      // < 15cm: DỪNG → KIỂM TRA PHÍA SAU ĐỂ LÙI
-      if (backDistance > BACK_DANGER_DISTANCE) {
-        // Phía sau AN TOÀN → LÙI RA
-        currentState = BACKING;
-        stateStartTime = currentTime;
-        targetSpeed = -BACK_SPEED;  // Lùi
-        servoAngle = 90;            // Đặt ngay góc thẳng
-        targetServoAngle = 90;      // Giữ thẳng khi lùi
-        myServo.write(90);          // Áp dụng ngay lập tức
-      } else {
-        // Phía sau cũng nguy hiểm → DỪNG HẲNG
-        targetSpeed = STOP_SPEED;   // = 0 (DỪNG THẬT)
-        targetServoAngle = 90;
-      }
-    } 
-    else if (frontDistance < SLOW_DISTANCE) {
-      // 15-25cm: RẼ GẮT - Tốc độ cao để thắng ma sát khi đánh lái
-      targetSpeed = TURN_BOOST;  // 105 - Đủ lực kéo khi rẽ gắt
-      targetServoAngle = 45;     // Rẽ gắt 60°
-    } 
-    else if (frontDistance < TURN_DISTANCE) {
-      // 25-40cm: RẼ + GIẢM TỐC
-      targetSpeed = CRUISE_SPEED;  // 95 - Vẫn đủ lực
-      targetServoAngle = 60;       // Rẽ vừa phải
-    } 
-    else if (frontDistance < PREPARE_DISTANCE) {
-      // 40-60cm: CHUẨN BỊ - Rẽ nhẹ
-      targetSpeed = CRUISE_SPEED;  // 95 - Tuần tra
-      targetServoAngle = 70;       // Rẽ nhẹ
-    } 
-    else {
-      // > 60cm: CHẠY THẲNG NHANH
-      targetSpeed = FAST_SPEED;  // 110
-      targetServoAngle = 90;     // Thẳng
+    if (frontDist > PREPARE_DISTANCE) {
+      targetSpeed = FAST_SPEED;
+      targetServoAngle = 90;
+    } else {
+      currentState = SLOW;
+    }
+    break;
+
+  case SLOW:
+    if (frontDist > TURN_DISTANCE) {
+      targetSpeed = CRUISE_SPEED;
+      targetServoAngle = 75;
+    } else {
+      currentState = TURN;
+    }
+    break;
+
+  case TURN:
+    if (frontDist > STOP_DISTANCE) {
+      targetSpeed = CRUISE_SPEED;
+      targetServoAngle = 55;
+    } else {
+      currentState = STOP;
+    }
+    break;
+
+  case STOP:
+    targetSpeed = STOP_SPEED;
+    targetServoAngle = 90;
+
+    if (backDist > BACK_DANGER_DISTANCE) {
+      // Chọn ngẫu nhiên hướng quay: 50% phải, 50% trái
+      turnRight = random(0, 2) == 0;  // random(0,2) trả về 0 hoặc 1
+      
+      Serial.print(">>> Chon huong: ");
+      Serial.println(turnRight ? "QUAY PHAI" : "QUAY TRAI");
+      
+      currentState = BACKING;
+      stateStartTime = now;
     }
     break;
 
   case BACKING:
-    // Đang lùi: Lùi TRỌN VẸN 2.5s, KHÔNG kiểm tra khoảng cách để tránh xung đột khi rẽ
     targetSpeed = -BACK_SPEED;
-    targetServoAngle = 90;  // Giữ thẳng khi lùi
+    targetServoAngle = 90;
 
-    // Chỉ kiểm tra timeout, KHÔNG kiểm tra backDistance
-    if (currentTime - stateStartTime >= BACK_TIME)
-    {
-      // Lùi xong → Chuyển sang rẽ
+    if (now - stateStartTime > BACK_TIME) {
       currentState = TURNING;
-      stateStartTime = currentTime;
+      stateStartTime = now;
     }
     break;
 
   case TURNING:
-    // Đang rẽ: CHẠY với tốc độ đủ lực + rẽ góc gắt
-    targetSpeed = TURN_BOOST;  // 105 - Đủ lực thắng ma sát khi rẽ
-    targetServoAngle = 30;     // Rẽ gắt 60°
+    targetSpeed = TURN_BOOST;
     
-    // Kiểm tra timeout
-    if (currentTime - stateStartTime >= TURN_TIME) {
-      // Chuyển sang tiến tiếp
+    // Áp dụng góc servo theo hướng đã chọn
+    if (turnRight) {
+      targetServoAngle = 30;   // Quay phải (góc nhỏ)
+    } else {
+      targetServoAngle = 150;  // Quay trái (góc lớn)
+    }
+
+    if (now - stateStartTime > TURN_TIME) {
       currentState = RESUMING;
     }
     break;
 
   case RESUMING:
-    // Quay về bình thường: Tiếp tục rẽ để thoát vật cản
-    targetSpeed = CRUISE_SPEED;  // 95 - Tuần tra
-    targetServoAngle = 45;       // Giữ rẽ vừa để thoát vật cản
+    targetSpeed = CRUISE_SPEED;
     
-    // Nếu phía trước an toàn, quay về NORMAL
-    if (frontDistance > PREPARE_DISTANCE) {
+    // Giữ hướng quay để thoát vật cản
+    if (turnRight) {
+      targetServoAngle = 60;   // Tiếp tục quay phải nhẹ
+    } else {
+      targetServoAngle = 120;  // Tiếp tục quay trái nhẹ
+    }
+
+    if (frontDist > PREPARE_DISTANCE) {
       currentState = NORMAL;
     }
     break;
   }
 
-  // Smooth servo transition - Quay servo từ từ để tránh dòng điện đột ngột
   smoothServoTransition();
-  
-  int servoDeviation = abs(servoAngle - 90);  // Độ lệch so với thẳng
-  
-  if (servoDeviation > 20 && targetSpeed >= FAST_SPEED) {
-
-    targetSpeed = CRUISE_SPEED;  // 95 - Vẫn đủ lực
-  }
-  
-  // Smooth speed transition - Thay đổi tốc độ dần dần
+  limitSpeedBySteering();
   smoothSpeedTransition();
+  
+  // Debug output
+  static unsigned long lastDebug = 0;
+  if (millis() - lastDebug > 500) {
+    Serial.print("F:");
+    Serial.print(frontDist);
+    Serial.print(" B:");
+    Serial.print(backDist);
+    Serial.print(" | L:");
+    Serial.print(leftMotorSpeed);
+    Serial.print(" R:");
+    Serial.print(rightMotorSpeed);
+    Serial.print(" | Servo:");
+    Serial.print(servoAngle);
+    Serial.print(" [");
+    Serial.print(turnRight ? "R" : "L");
+    Serial.print("] | Tilt:");
+    Serial.print(currentAngleX, 1);
+    Serial.print("/");
+    Serial.print(currentAngleY, 1);
+    Serial.print(" | Accel:");
+    Serial.println(currentAccelY, 2);
+    lastDebug = millis();
+  }
 
-  // showDebug(frontDistance, backDistance);
-
-  delay(150);  // Kiểm tra khoảng cách mỗi 0.75 giây
-  yield();
+  delay(60);
 }
 
-void showDebug(long frontDistance, long backDistance)
-{
-  // Serial.print("Front: ");
-  // Serial.print(frontDistance);
-  // Serial.print(" cm | Back: ");
-  // Serial.print(backDistance);
-  // Serial.print(" cm | Speed: ");
-  // Serial.print(currentSpeed);
-  // Serial.print("/");
-  // Serial.print(targetSpeed);
-  // Serial.print(" | Servo: ");
-  // Serial.print(servoAngle);
-  // Serial.print("° | State: ");
+/* ================================================= */
+/* ================= SAFETY ======================== */
+/* ================================================= */
 
-  switch (currentState)
-  {
-  case NORMAL:
-    if (frontDistance < STOP_DISTANCE)
-    {
-      // Serial.println("STOP!");
-    }
-    else if (frontDistance < SLOW_DISTANCE)
-    {
-      // Serial.println("SLOWING");
-    }
-    else if (frontDistance < TURN_DISTANCE)
-    {
-      // Serial.println("TURNING");
-    }
-    else if (frontDistance < PREPARE_DISTANCE)
-    {
-      // Serial.println("PREPARE");
-    }
-    else
-    {
-      // Serial.println("FORWARD");
-    }
-    break;
-  case BACKING:
-    // Serial.println("BACKING UP!");
-    break;
-  case TURNING:
-    // Serial.println("TURNING SHARP!");
-    break;
-  case RESUMING:
-    // Serial.println("RESUMING...");
-    break;
+void limitSpeedBySteering() {
+  int deviation = abs(servoAngle - 90);
+  if (deviation > 20 && targetSpeed > CRUISE_SPEED) {
+    targetSpeed = CRUISE_SPEED;
   }
 }
 
-void smoothServoTransition()
-{
+/* ================================================= */
+/* ================= SMOOTH ======================== */
+/* ================================================= */
 
-  int servoStep = 6;
+void smoothServoTransition() {
+  int step = 5;
+  if (servoAngle < targetServoAngle) servoAngle += step;
+  else if (servoAngle > targetServoAngle) servoAngle -= step;
 
-  if (servoAngle < targetServoAngle)
-  {
-    servoAngle += servoStep;
-    if (servoAngle > targetServoAngle)
-      servoAngle = targetServoAngle;
-  }
-  else if (servoAngle > targetServoAngle)
-  {
-    servoAngle -= servoStep;
-    if (servoAngle < targetServoAngle)
-      servoAngle = targetServoAngle;
-  }
-
+  servoAngle = constrain(servoAngle, 30, 150);
   myServo.write(servoAngle);
 }
 
-void smoothSpeedTransition()
-{
-
-  int speedStep = 15;
+void smoothSpeedTransition() {
+  int step = 12;
 
   if (targetSpeed > 0 && targetSpeed < MIN_RUN_SPEED)
-  {
     targetSpeed = MIN_RUN_SPEED;
-  }
   if (targetSpeed < 0 && targetSpeed > -MIN_RUN_SPEED)
-  {
     targetSpeed = -MIN_RUN_SPEED;
-  }
 
-  if (currentSpeed < targetSpeed)
-  {
+  if (currentSpeed < targetSpeed) currentSpeed += step;
+  else if (currentSpeed > targetSpeed) currentSpeed -= step;
 
-    currentSpeed += speedStep;
-    if (currentSpeed > targetSpeed)
-      currentSpeed = targetSpeed;
-  }
-  else if (currentSpeed > targetSpeed)
-  {
-
-    currentSpeed -= speedStep;
-    if (currentSpeed < targetSpeed)
-      currentSpeed = targetSpeed;
-  }
-
-  if (currentSpeed > 0)
-  {
-    moveForward(currentSpeed);
-  }
-  else if (currentSpeed < 0)
-  {
-    moveBackward(-currentSpeed);
-  }
-  else
-  {
+  // Tính tốc độ differential steering
+  calculateDifferentialSteering(currentSpeed);
+  
+  // Điều khiển motor theo differential steering
+  if (currentSpeed != 0) {
+    moveDifferential(leftMotorSpeed, rightMotorSpeed);
+  } else {
     stopMotor();
   }
 }
 
-void moveForward(int pwm)
-{
+/* ================================================= */
+/* ================= MOTOR ========================= */
+/* ================================================= */
+
+// Điều khiển differential steering với 2 tốc độ riêng
+// leftSpeed, rightSpeed: -255 đến 255
+void moveDifferential(int leftSpeed, int rightSpeed) {
+  // Giả sử: RPWM/LPWM điều khiển 1 BTS7960 cho cả 2 bánh
+  // Với 2 motor riêng, bạn cần thêm 2 channel PWM cho motor thứ 2
+  
+  // Hiện tại: Dùng RPWM cho bánh phải, LPWM cho bánh trái
+  // (Điều chỉnh theo cách đấu nối thực tế của bạn)
+  
+  int avgSpeed = (leftSpeed + rightSpeed) / 2;
+  
+  if (avgSpeed > 0) {
+    // Tiến: RPWM điều khiển tốc độ
+    int rightPWM = constrain(abs(rightSpeed), 0, 255);
+    ledcWrite(PWM_CHANNEL_RPWM, rightPWM);
+    ledcWrite(PWM_CHANNEL_LPWM, 0);
+  } else if (avgSpeed < 0) {
+    // Lùi: LPWM điều khiển tốc độ
+    int leftPWM = constrain(abs(leftSpeed), 0, 255);
+    ledcWrite(PWM_CHANNEL_RPWM, 0);
+    ledcWrite(PWM_CHANNEL_LPWM, leftPWM);
+  } else {
+    stopMotor();
+  }
+  
+}
+
+void moveForward(int pwm) {
   ledcWrite(PWM_CHANNEL_RPWM, pwm);
   ledcWrite(PWM_CHANNEL_LPWM, 0);
 }
 
-void moveBackward(int pwm)
-{
+void moveBackward(int pwm) {
   ledcWrite(PWM_CHANNEL_RPWM, 0);
   ledcWrite(PWM_CHANNEL_LPWM, pwm);
 }
 
-void stopMotor()
-{
+void stopMotor() {
   ledcWrite(PWM_CHANNEL_RPWM, 0);
   ledcWrite(PWM_CHANNEL_LPWM, 0);
 }
