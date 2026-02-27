@@ -19,22 +19,36 @@ public:
     static void calculateDifferentialSteering(int baseSpeed);
     static void moveDifferential(int leftSpeed, int rightSpeed);
     static void stopMotor();
+
+    // Speed control dựa trên Encoder 
+    static void updatePID();                // Gọi mỗi chu kỳ logic (20Hz)
+    static bool isPIDEnabled() { return pidEnabled; }
+    static void enablePID(bool enable);
     
     // Getters/Setters
     static void setTargetSpeed(int speed) { targetSpeed = speed; }
-    static int getCurrentSpeed() { return currentSpeed; }
-    static int getLeftMotorSpeed() { return leftMotorSpeed; }
-    static int getRightMotorSpeed() { return rightMotorSpeed; }
+    static int  getTargetSpeed()    { return targetSpeed; }
+    static int  getCurrentSpeed()   { return currentSpeed; }
+    static int  getRegulatedSpeed() { return regulatedSpeed; }  // Sau PID
+    static int  getLeftMotorSpeed()  { return leftMotorSpeed; }
+    static int  getRightMotorSpeed() { return rightMotorSpeed; }
+    static int  getPIDOutput() { return pidOutput; }
 
 private:
     static Servo steerServo; 
-    static int currentSpeed;
-    static int targetSpeed;
+    static int currentSpeed; // v hiện tai (sau smooth transition)
+    static int targetSpeed; // v mong muốn (được State Machine đặt)
+    static int regulatedSpeed;      // Tốc độ sau PID bù trừ (feed vào differential steering)
     static int steerServoAngle;
     static int targetSteerServoAngle;
-    // static int usSensorServoAngle;
     static int leftMotorSpeed;
     static int rightMotorSpeed;
+
+    //PID Controller 
+    static bool  pidEnabled;
+    static float pidIntegral;
+    static float pidLastError;
+    static int   pidOutput;  // Bù trừ PID (±50 PWM)
 };
 
 #endif

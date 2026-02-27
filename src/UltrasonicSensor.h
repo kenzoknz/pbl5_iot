@@ -1,6 +1,7 @@
 #ifndef ULTRASONIC_SENSOR_H
 #define ULTRASONIC_SENSOR_H
-#define DEBUG_SENSOR
+
+// #define DEBUG_SENSOR
 
 #include "Config.h"
 #include <Arduino.h>
@@ -14,14 +15,9 @@ enum OperationMode {
     MANUAL
 };
 
-// // ── Buffer & timing ──────────────────────────────────────────────────────────
-// #define BUFFER_SIZE     3        // Cũ 5 (phản ứng hơi chậm, test 3) Số mẫu trong circular buffer
-// #define SENSOR_PERIOD   60      // ms — HC-SR04 yêu cầu >= 60ms giữa 2 trigger
-
 class UltrasonicSensor {
 public:
     static void begin();
-
     // Chuyển chế độ (suspend/resume tất cả sensor tasks)
     static void setMode(OperationMode mode);
     static OperationMode getMode();
@@ -37,18 +33,13 @@ public:
 
 private:
 
-    // Task handles
-    static TaskHandle_t frontTaskHandle;
-    static TaskHandle_t rightTaskHandle;
-    static TaskHandle_t leftTaskHandle;
+    // 2 Tasks: 1 cho 3 cảm biến trước (sequential), 1 cho sau
+    static TaskHandle_t frontGroupTaskHandle;
     static TaskHandle_t backTaskHandle;
-
     static OperationMode currentMode;
 
     // FreeRTOS Tasks — chạy trên Core 0
-    static void frontSensorTask(void *pvParameters);
-    static void rightSensorTask(void *pvParameters);
-    static void leftSensorTask(void *pvParameters);
+    static void frontGroupSensorTask(void *pvParameters);
     static void backSensorTask(void *pvParameters);
 
     // Buffer updates
@@ -59,12 +50,14 @@ private:
 
     // Median filter
     static long getMedian(long* buffer);
-
+    static long applyAdaptiveFilter(long rawDist, long *buffer, int &index, float &emaValue);
 };
 
 // ── [+] MỚI: Mutex khai báo extern — định nghĩa 1 lần trong .cpp ─────────────
 //    V3 gốc khai báo global không có extern → multiple definition khi include
 //    nhiều file. Sửa bằng cách khai báo extern ở .h, định nghĩa ở .cpp.
-extern SemaphoreHandle_t sensorMutex;
+// 2 Mutex: front group + back (không cần 4)
+extern SemaphoreHandle_t frontGroupMutex;
+extern SemaphoreHandle_t backMutex;
 
 #endif 

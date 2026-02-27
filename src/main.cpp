@@ -2,6 +2,7 @@
 #include "UltrasonicSensor.h"
 #include "MPUSensor.h"
 #include "MotorController.h"
+#include "EncoderSensor.h" 
 #include "VehicleStateMachine.h"
 
 // Task Handles để quản lý (Suspend/Resume/Monitor)
@@ -25,6 +26,13 @@ void setup() {
     }
     
     MotorController::begin();
+    // Encoder (PCNT hardware + task Core 1) 
+    if (!EncoderSensor::begin()) {
+        Serial.println("!!! ENCODER FAILED !!!");
+        // Không halt — encoder là optional, robot vẫn chạy được không có PID
+    } else {
+        MotorController::enablePID(true);  // Bật PID khi encoder hoạt động
+    }
     VehicleStateMachine::begin();
 
     // 2. Task Xử lý Logic (State Machine) -  Core 1, 20Hz
