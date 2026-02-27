@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 /* ================== SYSTEM & FREERTOS ================== */
-// Ưu tiên Task (Priority 0 là thấp nhất)
+// Ưu tiên Task (Default: 0 (min) -> 24)
 #define PRIORITY_MOTOR    5
 #define PRIORITY_SENSORS  3
 #define PRIORITY_LOGIC    5
@@ -38,7 +38,7 @@
 #define US_SCAN_CENTER 90         // Thẳng (giữa của SG90: 0-180°)
 #define US_SCAN_RIGHT 30          // Quay phải 60° (30° từ 0°)
 #define US_SCAN_LEFT 130          // Quay trái 60° (150° từ 180°)
-#define SERVO_SCAN_DELAY_MS 500   // Sử dụng vTaskDelay thay vì delay()
+#define SERVO_SCAN_DELAY_MS 200   // cũ: 500 -> lâu (?) test 200 Sử dụng vTaskDelay thay vì delay()
 
 /* ================== ULTRASONIC ================== */
 #define TRIG_FRONT 16
@@ -89,13 +89,13 @@ enum State {
   MANUAL_CONTROL  // chế độ người dùng điều khiển
 };
 
-/* ================== SCAN SUBSTATES ================== */
-enum ScanPhase {
-  SCAN_IDLE,
-  SCAN_RIGHT,
-  SCAN_LEFT,
-  SCAN_CENTER_RETURN,
-  SCAN_COMPLETE
-};
+// /* ================== SCAN SUBSTATES ================== */
+// enum ScanPhase {
+//   SCAN_IDLE,
+//   SCAN_RIGHT,
+//   SCAN_LEFT,
+//   SCAN_CENTER_RETURN,
+//   SCAN_COMPLETE
+// };
 
 #endif

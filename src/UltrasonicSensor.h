@@ -41,6 +41,13 @@ public:
 
     // ── Quét servo (gọi từ Decision Task trên Core 1) ────────────────────────
     static void scanAllDirections(long& rightDist, long& leftDist);
+        // ── Suspend / Resume riêng frontTask khi quét servo ──────────────────────
+    //    Ý nghĩa: Khi servo quay sang góc khác (30° hoặc 150°), frontSensorTask
+    //    vẫn tiếp tục đọc và nạp vào buffer — nhưng đó là khoảng cách của góc
+    //    lệch, không phải góc quét. Buffer bị "ô nhiễm" dữ liệu sai → quyết
+    //    định hướng đi sai.
+    static void suspendFrontTask();
+    static void resumeFrontTask();
 
     // ── [+] MỚI: Chuyển chế độ hoạt động ────────────────────────────────────
     //    Ý nghĩa: Khi MANUAL → suspend cả 2 sensor task để nhường tài nguyên
@@ -75,62 +82,3 @@ private:
 //    V3 gốc khai báo global không có extern → multiple definition khi include
 //    nhiều file. Sửa bằng cách khai báo extern ở .h, định nghĩa ở .cpp.
 extern SemaphoreHandle_t sensorMutex;
-
-
-
-
-
-// // #ifndef ULTRASONIC_SENSOR_H
-// // #define ULTRASONIC_SENSOR_H
-// // #include "MotorController.h"
-// // #include "Config.h"
-
-// // class UltrasonicSensor {
-// // public:
-// //     static long readDistanceAsync(int trig, int echo);
-// //     static long readDistanceOnce(int trig, int echo);
-// //     static long readDistanceFiltered(int trig, int echo);
-// //     static long readFrontDistance();
-// //     static long readBackDistance();
-// //     static void begin();
-    
-// //     // Qu\u00e9t v\u1edbi servo si\u00eau \u00e2m (g\u1ecdi MotorController \u0111\u1ec3 quay servo)
-// //     static long scanAtAngle(int angle);
-// //     static void scanAllDirections(long &rightDist, long &leftDist);
-
-// // private:
-// //     static void sort(long* arr, int size);
-// // };
-
-// // #endif
-
-// #ifndef ULTRASONIC_SENSOR_H
-// #define ULTRASONIC_SENSOR_H
-
-// #include <Arduino.h>
-
-// class UltrasonicSensor {
-// public:
-//     static void begin();
-
-//     // ===== TASK FUNCTIONS (Core 0) =====
-//     static void frontSensorTask(void *pvParameters);
-//     static void backSensorTask(void *pvParameters);
-
-//     // ===== API CHO DECISION TASK (Core 1) =====
-//     static long getFrontDistance();
-//     static long getBackDistance();
-
-//     // ===== SERVO SCAN (Core 1 gọi khi cần quyết định) =====
-//     static void scanAllDirections(long &rightDist, long &leftDist);
-
-// private:
-//     static long readDistanceRaw(int trig, int echo);
-//     static void updateFrontBuffer();
-//     static void updateBackBuffer();
-//     static long getMedian(long *buffer);
-
-//     static const int BUFFER_SIZE = 5;
-// };
-
-// #endif

@@ -33,7 +33,6 @@ void UltrasonicSensor::begin() {
 
     sensorMutex = xSemaphoreCreateMutex();
 
-    // [+] Kiểm tra mutex tạo thành công
     if (sensorMutex == NULL) {
         Serial.println("[SENSOR][ERROR] Khong the tao sensorMutex! Dung chuong trinh.");
         while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); } // Halt an toàn
@@ -299,4 +298,48 @@ void UltrasonicSensor::scanAllDirections(long& rightDist, long& leftDist) {
     // Trả về giữa
     MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
     Serial.println("[SENSOR]   Servo tra ve trung tam (90°)");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// suspendFrontTask() / resumeFrontTask()
+//
+// Tại sao cần 2 hàm này thay vì chỉ dùng setMode(MANUAL)?
+//
+//   setMode(MANUAL) suspend CẢ frontTask VÀ backTask — dùng khi chuyển hẳn
+//   sang chế độ người điều khiển, không cần theo dõi cảm biến nào cả.
+//
+//   suspendFrontTask() chỉ dừng frontTask — dùng trong lúc quét servo:
+//   backTask vẫn chạy liên tục để phát hiện xe đang lùi vào vật cản.
+//
+// Race condition khi resume:
+//   Sau resumeFrontTask(), frontBuffer còn chứa các mẫu cũ từ góc quét.
+//   frontSensorTask sẽ ghi đè dần trong ~5 × 60ms = 300ms tiếp theo.
+//   Trong thời gian đó getFrontDistance() vẫn trả về median — nếu buffer
+//   có 3 mẫu cũ + 2 mẫu mới thì median vẫn hợp lý. Chấp nhận được.
+//   Nếu cần chính xác tuyệt đối: flush buffer sau resume (xem TODO dưới).
+// ─────────────────────────────────────────────────────────────────────────────
+void UltrasonicSensor::suspendFrontTask() {
+    if (frontTaskHandle == NULL) return;
+    vTaskSuspend(frontTaskHandle);
+
+    #ifdef DEBUG_SENSOR
+        Serial.println("[SENSOR] frontSensorTask SUSPENDED (scan mode)");
+    #endif
+}
+
+void UltrasonicSensor::resumeFrontTask() {
+    if (frontTaskHandle == NULL) return;
+
+    // TODO (nếu cần): Flush buffer về 999 để xóa dữ liệu cũ từ góc quét
+    // xSemaphoreTake(sensorMutex, portMAX_DELAY);
+    // for (int i = 0; i < BUFFER_SIZE; i++) frontBuffer[i] = 999;
+    // frontIndex = 0;
+    // xSemaphoreGive(sensorMutex);
+
+    vTaskResume(frontTaskHandle);
+
+    #ifdef DEBUG_SENSOR
+        Serial.println("[SENSOR] frontSensorTask RESUMED");
+    #endif
 }

@@ -12,16 +12,33 @@ long VehicleStateMachine::scannedRightDist = 0;
 long VehicleStateMachine::scannedLeftDist = 0;
 bool VehicleStateMachine::turnRight = true;
 bool VehicleStateMachine::scanCompleted = false;
+ScanPhase VehicleStateMachine::currentScanPhase = SCAN_IDLE; 
+unsigned long VehicleStateMachine::lastScanStepTime = 0;
 
-// Biến nội bộ quản lý tiến trình quét Servo không chặn (Non-blocking scan)
-static ScanPhase currentScanPhase = SCAN_IDLE;
-static unsigned long lastScanStepTime = 0;
+static const uint32_t SERVO_SETTLE_MS = 200;
+
+// ── [FIX BUG-1] Hàm đọc median 3 mẫu tại chỗ ────────────────────────────────
+// Gọi từ handleTurnState() khi servo đã đứng yên ở góc cố định.
+// Không dùng getFrontDistance() vì lúc này background task bị suspend ([FIX BUG-7])
+// nên buffer có thể không được cập nhật.
+// vTaskDelay(60ms) giữa các lần đọc = đúng yêu cầu HC-SR04.
+static long scanMedian3(int trig, int echo) {
+    long s[3];
+    for (int i = 0; i < 3; i++) {
+        s[i] = UltrasonicSensor::readDistanceRaw(trig, echo);
+        vTaskDelay(pdMS_TO_TICKS(65)); // 65ms > 60ms min của HC-SR04
+    }
+    // Bubble sort 3 phần tử
+    if (s[0] > s[1]) { long t = s[0]; s[0] = s[1]; s[1] = t; }
+    if (s[1] > s[2]) { long t = s[1]; s[1] = s[2]; s[2] = t; }
+    if (s[0] > s[1]) { long t = s[0]; s[0] = s[1]; s[1] = t; }
+    return s[1];
+}
 
 void VehicleStateMachine::begin() {
     // Khởi tạo random seed
     randomSeed(analogRead(0) + micros());
     
-    // Đặt servo siêu âm về giữa
     MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
     
     currentState = NORMAL;
@@ -68,7 +85,7 @@ void VehicleStateMachine::update() {
         default:       currentState = NORMAL; break;
     }
 
-    // 4. Cập nhật Output (Chỉ thực thi khi có thay đổi thực sự nhờ Dirty Bit trong MotorController)
+    // 4. Cập nhật Output (Chỉ thực thi khi có thay đổi -> Dirty Bit trong MotorController)
     MotorController::smoothSteerServoTransition();
     MotorController::limitSpeedBySteering();
     MotorController::smoothSpeedTransition();
@@ -98,11 +115,31 @@ void VehicleStateMachine::update() {
 //     }
 // }
 
+void VehicleStateMachine::handleNormalState(long frontDist) {
+    MotorController::setUSSensorServoAngle(US_SCAN_CENTER); 
+    
+    if (frontDist > TURN_DISTANCE) {
+        // Đường rộng — chạy tốc độ cruise
+        MotorController::setTargetSpeed(CRUISE_SPEED);
+        MotorController::setTargetSteerServoAngle(90);
+    } else if (frontDist > SLOW_DISTANCE) {
+        // Vùng đệm — giảm tốc, chưa cần dừng
+        currentState = SLOW;
+        Serial.println(">>> NORMAL -> SLOW");
+    }
+    else {
+        // Gần hoặc rất gần — quét ngay
+        currentState     = TURN;
+        currentScanPhase = SCAN_IDLE; // [FIX BUG-5]
+        stateStartTime   = millis();
+        Serial.println(">>> NORMAL -> TURN");
+    }
+}
+
 // ========== 2️⃣ SLOW ==========
 void VehicleStateMachine::handleSlowState(long frontDist) {
-    // Chạy chậm
+    MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
     MotorController::setTargetSpeed(MIN_RUN_SPEED);
-    MotorController::setTargetSteerServoAngle(90);
     
     if (frontDist > TURN_DISTANCE) {
         // Đường rộng lại - về NORMAL
@@ -113,7 +150,9 @@ void VehicleStateMachine::handleSlowState(long frontDist) {
         // Quá gần - phải tránh
         currentState = TURN;
         currentScanPhase = SCAN_IDLE;
+        stateStartTime   = millis();
         Serial.println(">>> SLOW -> TURN (quet servo)");
+        // Nếu SLOW_DISTANCE >= frontDist > STOP_DISTANCE → giữ SLOW, tiếp tục giảm tốc
     }
 }
 
@@ -164,77 +203,187 @@ void VehicleStateMachine::handleSlowState(long frontDist) {
 //     }
 // }
 
+// void VehicleStateMachine::handleTurnState(long frontDist, long backDist) {
+//     // Dừng xe để quét
+//     MotorController::setTargetSpeed(STOP_SPEED);
+//     unsigned long now = millis();
+
+//     // Thay vì gọi hàm scanAllDirections tập trung (gây block), ta chia nhỏ giai đoạn
+//     switch (currentScanPhase) {
+//         case SCAN_IDLE:
+//             Serial.println("[SCAN] Step 1: Quay phai...");
+//             MotorController::setUSSensorServoAngle(US_SCAN_RIGHT);
+//             lastScanStepTime = now;
+//             currentScanPhase = SCAN_RIGHT;
+//             break;
+
+//         case SCAN_RIGHT:
+//             if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) {
+//                 scannedRightDist = UltrasonicSensor::readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
+//                 Serial.printf("[SCAN] Ket qua Phai: %ld cm. Quay trai...\n", scannedRightDist);
+//                 MotorController::setUSSensorServoAngle(US_SCAN_LEFT);
+//                 lastScanStepTime = now;
+//                 currentScanPhase = SCAN_LEFT;
+//             }
+//             break;
+
+//         case SCAN_LEFT:
+//             if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) {
+//                 scannedLeftDist = UltrasonicSensor::readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
+//                 Serial.printf("[SCAN] Ket qua Trai: %ld cm. Ve trung tam...\n", scannedLeftDist);
+//                 MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
+//                 lastScanStepTime = now;
+//                 currentScanPhase = SCAN_CENTER_RETURN;
+//             }
+//             break;
+
+//         case SCAN_CENTER_RETURN:
+//             if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) {
+//                 currentScanPhase = SCAN_COMPLETE;
+//             }
+//             break;
+
+//         case SCAN_COMPLETE:
+//             // Đưa ra quyết định dựa trên dữ liệu đã quét
+//             if (scannedRightDist > TURN_DISTANCE && scannedRightDist >= scannedLeftDist) {
+//                 turnRight = true;
+//                 currentState = TURNING;
+//             } else if (scannedLeftDist > TURN_DISTANCE) {
+//                 turnRight = false;
+//                 currentState = TURNING;
+//             } else {
+//                 currentState = (backDist > BACK_DANGER_DISTANCE) ? BACKING : STOP;
+//             }
+            
+//             stateStartTime = now;
+//             currentScanPhase = SCAN_IDLE; // Reset cho lần sau
+//             break;
+//     }
+// }
+
+// ════════════════════════════════════════════════════════════════════════════
+// handleTurnState — QUÉT SERVO THEO STATE MACHINE KHÔNG BLOCKING
+//
+// Luồng đúng:
+//   SCAN_IDLE
+//     → Ra lệnh quay servo sang phải
+//   SCAN_MOVING_RIGHT  (chờ SERVO_SETTLE_MS)
+//     → Servo đã đứng yên: đọc 3 mẫu median [FIX BUG-1,3]
+//   SCAN_READING_RIGHT
+//     → Ra lệnh quay servo sang trái
+//   SCAN_MOVING_LEFT   (chờ SERVO_SETTLE_MS)
+//     → Servo đã đứng yên: đọc 3 mẫu median
+//   SCAN_READING_LEFT
+//     → Ra lệnh quay về giữa, resume background task [FIX BUG-7]
+//   SCAN_RETURNING_CENTER (chờ SERVO_SETTLE_MS)
+//   SCAN_COMPLETED
+//     → Ra quyết định hướng đi
+// ════════════════════════════════════════════════════════════════════════════
+
+// Trong VehicleStateMachine.cpp
 void VehicleStateMachine::handleTurnState(long frontDist, long backDist) {
-    // Dừng xe để quét
-    MotorController::setTargetSpeed(STOP_SPEED);
-    
+    MotorController::setTargetSpeed(STOP_SPEED); // Dừng xe để quét
     unsigned long now = millis();
 
-    // Thay vì gọi hàm scanAllDirections tập trung (gây block), ta chia nhỏ giai đoạn
     switch (currentScanPhase) {
         case SCAN_IDLE:
-            Serial.println("[SCAN] Step 1: Quay phai...");
+            UltrasonicSensor::suspendFrontTask();
             MotorController::setUSSensorServoAngle(US_SCAN_RIGHT);
             lastScanStepTime = now;
-            currentScanPhase = SCAN_RIGHT;
+            currentScanPhase = SCAN_MOVING_RIGHT;
             break;
 
-        case SCAN_RIGHT:
+        case SCAN_MOVING_RIGHT:
+            if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) { // Đợi servo quay xong
+                // scannedRightDist = UltrasonicSensor::readDistanceRaw(TRIG_FRONT, ECHO_FRONT); // Đo thực tế
+                // currentScanPhase = SCAN_MOVING_LEFT;
+                currentScanPhase = SCAN_READING_RIGHT;
+                // MotorController::setUSSensorServoAngle(US_SCAN_LEFT); // Ra lệnh quay trái
+                // lastScanStepTime = now;
+            }
+            break;
+        
+         case SCAN_READING_RIGHT:
+            // [FIX BUG-1] Đọc median 3 mẫu thay vì 1 mẫu
+            scannedRightDist = scanMedian3(TRIG_FRONT, ECHO_FRONT);
+            Serial.printf("[SCAN] Phai (%d°): %ld cm\n", US_SCAN_RIGHT, scannedRightDist);
+            MotorController::setUSSensorServoAngle(US_SCAN_LEFT);
+            lastScanStepTime = now;
+            currentScanPhase = SCAN_MOVING_LEFT;
+            break;
+
+        case SCAN_MOVING_LEFT:
             if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) {
-                scannedRightDist = UltrasonicSensor::readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
-                Serial.printf("[SCAN] Ket qua Phai: %ld cm. Quay trai...\n", scannedRightDist);
-                MotorController::setUSSensorServoAngle(US_SCAN_LEFT);
-                lastScanStepTime = now;
-                currentScanPhase = SCAN_LEFT;
+                // scannedLeftDist = UltrasonicSensor::readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
+                // currentScanPhase = SCAN_RETURNING_CENTER;
+                // MotorController::setUSSensorServoAngle(US_SCAN_CENTER); // Quay về thẳng
+                // lastScanStepTime = now;
+                currentScanPhase = SCAN_READING_LEFT;
             }
             break;
+        
+        case SCAN_READING_LEFT:
+            // [FIX BUG-1] Đọc median 3 mẫu
+            scannedLeftDist = scanMedian3(TRIG_FRONT, ECHO_FRONT);
+            Serial.printf("[SCAN] Trai (%d°): %ld cm\n", US_SCAN_LEFT, scannedLeftDist);
+            // Quay về giữa và resume background task
+            MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
+            UltrasonicSensor::resumeFrontTask(); // [FIX BUG-7]
+            lastScanStepTime = now;
+            currentScanPhase = SCAN_RETURNING_CENTER;
+            break;
 
-        case SCAN_LEFT:
+        case SCAN_RETURNING_CENTER:
             if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) {
-                scannedLeftDist = UltrasonicSensor::readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
-                Serial.printf("[SCAN] Ket qua Trai: %ld cm. Ve trung tam...\n", scannedLeftDist);
-                MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
-                lastScanStepTime = now;
-                currentScanPhase = SCAN_CENTER_RETURN;
+                currentScanPhase = SCAN_COMPLETED;
             }
             break;
 
-        case SCAN_CENTER_RETURN:
-            if (now - lastScanStepTime >= SERVO_SCAN_DELAY_MS) {
-                currentScanPhase = SCAN_COMPLETE;
-            }
-            break;
-
-        case SCAN_COMPLETE:
-            // Đưa ra quyết định dựa trên dữ liệu đã quét
-            if (scannedRightDist > TURN_DISTANCE && scannedRightDist >= scannedLeftDist) {
-                turnRight = true;
-                currentState = TURNING;
-            } else if (scannedLeftDist > TURN_DISTANCE) {
-                turnRight = false;
-                currentState = TURNING;
-            } else {
-                currentState = (backDist > BACK_DANGER_DISTANCE) ? BACKING : STOP;
-            }
+        case SCAN_COMPLETED:
+            Serial.printf("[SCAN] Phan tich: Phai=%ld Trai=%ld (nguong=%d)\n",
+                          scannedRightDist, scannedLeftDist, TURN_DISTANCE); 
             
-            stateStartTime = now;
-            currentScanPhase = SCAN_IDLE; // Reset cho lần sau
+            bool rightOk = (scannedRightDist > TURN_DISTANCE);
+            bool leftOk  = (scannedLeftDist  > TURN_DISTANCE);
+            // RA QUYẾT ĐỊNH HƯỚNG ĐI cũ 
+            // if (scannedRightDist > TURN_DISTANCE && scannedRightDist >= scannedLeftDist) {
+            //     turnRight = true;
+            //     currentState = TURNING; // Rẽ phải
+            // } else if (scannedLeftDist > TURN_DISTANCE) {
+            //     turnRight = false;
+            //     currentState = TURNING; // Rẽ trái
+            // } else {
+            //     // Nếu cả 2 bên đều vướng, kiểm tra phía sau để lùi
+            //     currentState = (backDist > BACK_DANGER_DISTANCE) ? BACKING : STOP;
+            // }
+            // currentScanPhase = SCAN_IDLE; // Reset phase cho lần sau
+            // stateStartTime = now;
+
+             if (rightOk && scannedRightDist >= scannedLeftDist) {
+                turnRight    = true;
+                currentState = TURNING;
+                Serial.println("[SCAN] Quyet dinh: QUAY PHAI");
+            }
+            else if (leftOk) {
+                turnRight    = false;
+                currentState = TURNING;
+                Serial.println("[SCAN] Quyet dinh: QUAY TRAI");
+            }
+            else if (backDist > BACK_DANGER_DISTANCE) {
+                currentState = BACKING;
+                Serial.println("[SCAN] Quyet dinh: LUI LAI");
+            }
+            else {
+                currentState = STOP;
+                Serial.println("[SCAN] Quyet dinh: BI KET - DUNG");
+            }
+
+            currentScanPhase = SCAN_IDLE; // [FIX BUG-5] Reset cho lần sau
+            stateStartTime   = now;
             break;
     }
 }
 
-// ========== CÁC HÀM XỬ LÝ KHÁC (Giữ nguyên logic cũ nhưng tối ưu Task) ==========
-void VehicleStateMachine::handleNormalState(long frontDist) {
-    if (frontDist <= STOP_DISTANCE) {
-        currentState = TURN;
-        currentScanPhase = SCAN_IDLE;
-    } else if (frontDist <= TURN_DISTANCE) {
-        currentState = SLOW;
-    } else {
-        MotorController::setTargetSpeed(CRUISE_SPEED);
-        MotorController::setTargetSteerServoAngle(90);
-    }
-}
 // ========== 4️⃣ BACKING ==========
 void VehicleStateMachine::handleBackingState(long backDist, unsigned long now) {
     // Kiểm tra an toàn phía sau
@@ -248,12 +397,13 @@ void VehicleStateMachine::handleBackingState(long backDist, unsigned long now) {
     
     // Lùi với servo giữa
     MotorController::setTargetSpeed(-BACK_SPEED);
-    MotorController::setTargetSteerServoAngle(90);
+    MotorController::setUSSensorServoAngle(90);
     
     // Lùi đủ thời gian?
     if (now - stateStartTime >= BACK_TIME) {
         // Sau khi lùi xong, quét lại
         currentState = TURN;
+        currentScanPhase = SCAN_IDLE;
         scanCompleted = false;  // Reset flag để quét lại
         Serial.println(">>> BACKING -> TURN (quet lai)");
     }
@@ -266,7 +416,7 @@ void VehicleStateMachine::handleTurningState(unsigned long now) {
     
     // Rẽ với tốc độ cao để thắng ma sát
     MotorController::setTargetSpeed(TURN_BOOST);
-    MotorController::setTargetSteerServoAngle(turnRight ? 45 : 135);
+    MotorController::setUSSensorServoAngle(turnRight ? 45 : 135);
     
     // if (turnRight) {
     //     MotorController::setTargetSteerServoAngle(45);  // Rẽ phải
@@ -282,71 +432,162 @@ void VehicleStateMachine::handleTurningState(unsigned long now) {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// [FIX BUG-6] Thêm nhánh SLOW cho vùng trung gian STOP_DISTANCE..TURN_DISTANCE
+// Code cũ không xử lý vùng này → robot chạy thẳng vào vật cản
+// ════════════════════════════════════════════════════════════════════════════
+
 // ========== 6️⃣ RESUMING ==========
 void VehicleStateMachine::handleResumingState(long frontDist, unsigned long now) {
-    // Trả servo lái về giữa dần
-    MotorController::setTargetSteerServoAngle(90);
-    
-    // Chạy chậm tiếp
+    MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
     MotorController::setTargetSpeed(CRUISE_SPEED);
     
     // Giữ một chút rồi về NORMAL
+    // if (now - stateStartTime >= RESUME_TIME) {
+    //     currentState = (frontDist > TURN_DISTANCE) ? NORMAL : TURN;
+    //     // Nếu trong khoảng STOP_DISTANCE..TURN_DISTANCE, tiếp tục RESUMING
+    // }
     if (now - stateStartTime >= RESUME_TIME) {
-        currentState = (frontDist > TURN_DISTANCE) ? NORMAL : TURN;
-        // Nếu trong khoảng STOP_DISTANCE..TURN_DISTANCE, tiếp tục RESUMING
+        if (frontDist > TURN_DISTANCE) {
+            currentState = NORMAL;
+            Serial.println(">>> RESUMING -> NORMAL");
+        }
+        else if (frontDist > SLOW_DISTANCE) {
+            currentState = SLOW;  // [FIX BUG-6]
+            Serial.println(">>> RESUMING -> SLOW");
+        }
+        else {
+            // Vẫn còn vật cản gần → quét lại
+            currentState     = TURN;
+            currentScanPhase = SCAN_IDLE;
+            stateStartTime   = now;
+            Serial.println(">>> RESUMING -> TURN (van con vat can)");
+        }
     }
 }
 
 // ========== 7️⃣ STOP ==========
 void VehicleStateMachine::handleStopState(long frontDist) {
-    // Dừng hoàn toàn
     MotorController::setTargetSpeed(STOP_SPEED);
-    MotorController::setTargetSteerServoAngle(90);
+    MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
+    currentScanPhase = SCAN_IDLE;
     
     // Nếu đường trước rộng lại → về NORMAL
     if (frontDist > TURN_DISTANCE) {
         currentState = NORMAL;
         Serial.println(">>> STOP -> NORMAL (duong rong)");
     }
-}
-
-// ========== DEBUG OUTPUT ==========
-void VehicleStateMachine::debugOutput() {
-    if (millis() - lastDebugTime > 500) {
-        long frontDist = UltrasonicSensor::getFrontDistance();
-        long backDist = UltrasonicSensor::getBackDistance();
-        
-        const char* stateNames[] = {"INIT", "NORMAL", "SLOW", "TURN", "STOP", "BACKING", "TURNING", "RESUMING"};
-        
-        Serial.print("[");
-        Serial.print(stateNames[currentState]);
-        Serial.print("] F:");
-        Serial.print(frontDist);
-        Serial.print(" B:");
-        Serial.print(backDist);
-        Serial.print(" | Spd:");
-        Serial.print(MotorController::getCurrentSpeed());
-        Serial.print(" L:");
-        Serial.print(MotorController::getLeftMotorSpeed());
-        Serial.print(" R:");
-        Serial.print(MotorController::getRightMotorSpeed());
-        Serial.print(" | Steer:");
-        Serial.print(MotorController::getSteerServoAngle());
-        Serial.print(" US:");
-        Serial.print(MotorController::getUSSensorServoAngle());
-        Serial.print(" [");
-        Serial.print(turnRight ? "R" : "L");
-        Serial.print("]");
-        
-        if (scannedRightDist > 0 || scannedLeftDist > 0) {
-            Serial.print(" | Scan R:");
-            Serial.print(scannedRightDist);
-            Serial.print(" L:");
-            Serial.print(scannedLeftDist);
-        }
-        
-        Serial.println("");
-        
-        lastDebugTime = millis();
+        currentScanPhase = SCAN_IDLE; // Reset cho lần sau
     }
+
+// void VehicleStateMachine::handleScanningProcess() {
+//     unsigned long now = millis();
+
+//     switch (currentScanPhase) {
+//         case SCAN_IDLE:
+//             scannedRightDist = 0;
+//             scannedLeftDist = 0;
+//             MotorController::setUSSensorServoAngle(US_SCAN_RIGHT);
+//             lastScanStepTime = now;
+//             currentScanPhase = SCAN_MOVING_RIGHT;
+//             break;
+
+//         case SCAN_MOVING_RIGHT:
+//             if (now - lastScanStepTime > SERVO_SETTLE_TIME) {
+//                 scannedRightDist = UltrasonicSensor::getFrontDistance();
+//                 MotorController::setUSSensorServoAngle(US_SCAN_LEFT);
+//                 lastScanStepTime = now;
+//                 currentScanPhase = SCAN_MOVING_LEFT;
+//             }
+//             break;
+
+//         case SCAN_MOVING_LEFT:
+//             if (now - lastScanStepTime > SERVO_SETTLE_TIME) {
+//                 scannedLeftDist = UltrasonicSensor::getFrontDistance();
+//                 MotorController::setUSSensorServoAngle(US_SCAN_CENTER);
+//                 lastScanStepTime = now;
+//                 currentScanPhase = SCAN_RETURNING_CENTER;
+//             }
+//             break;
+
+//         case SCAN_RETURNING_CENTER:
+//             if (now - lastScanStepTime > SERVO_SETTLE_TIME) {
+//                 currentScanPhase = SCAN_COMPLETED;
+//             }
+//             break;
+//     }
+// }
+
+// // ========== DEBUG OUTPUT ==========
+// void VehicleStateMachine::debugOutput() {
+//     if (millis() - lastDebugTime > 500) {
+//         long frontDist = UltrasonicSensor::getFrontDistance();
+//         long backDist = UltrasonicSensor::getBackDistance();
+        
+//         const char* stateNames[] = {"INIT", "NORMAL", "SLOW", "TURN", "STOP", "BACKING", "TURNING", "RESUMING"};
+        
+//         Serial.print("[");
+//         Serial.print(stateNames[currentState]);
+//         Serial.print("] F:");
+//         Serial.print(frontDist);
+//         Serial.print(" B:");
+//         Serial.print(backDist);
+//         Serial.print(" | Spd:");
+//         Serial.print(MotorController::getCurrentSpeed());
+//         Serial.print(" L:");
+//         Serial.print(MotorController::getLeftMotorSpeed());
+//         Serial.print(" R:");
+//         Serial.print(MotorController::getRightMotorSpeed());
+//         Serial.print(" | Steer:");
+//         Serial.print(MotorController::getSteerServoAngle());
+//         Serial.print(" US:");
+//         Serial.print(MotorController::getUSSensorServoAngle());
+//         Serial.print(" [");
+//         Serial.print(turnRight ? "R" : "L");
+//         Serial.print("]");
+        
+//         if (scannedRightDist > 0 || scannedLeftDist > 0) {
+//             Serial.print(" | Scan R:");
+//             Serial.print(scannedRightDist);
+//             Serial.print(" L:");
+//             Serial.print(scannedLeftDist);
+//         }
+        
+//         Serial.println("");
+        
+//         lastDebugTime = millis();
+//     }
+// }
+
+void VehicleStateMachine::debugOutput() {
+    if (millis() - lastDebugTime < 500) return;
+    lastDebugTime = millis();
+
+    long frontDist = UltrasonicSensor::getFrontDistance();
+    long backDist  = UltrasonicSensor::getBackDistance();
+
+    const char* stateNames[] = {
+        "INIT", "NORMAL", "SLOW", "TURN", "STOP",
+        "BACKING", "TURNING", "RESUMING", "MANUAL"
+    };
+    const char* scanNames[] = {
+        "IDLE", "MOV_R", "READ_R", "MOV_L", "READ_L", "RET_C", "DONE"
+    };
+
+    Serial.printf("[%s|%s] F:%ld B:%ld | Spd:%d L:%d R:%d | Steer:%d US:%d [%s]",
+        stateNames[currentState],
+        scanNames[currentScanPhase],
+        frontDist, backDist,
+        MotorController::getCurrentSpeed(),
+        MotorController::getLeftMotorSpeed(),
+        MotorController::getRightMotorSpeed(),
+        MotorController::getSteerServoAngle(),
+        MotorController::getUSSensorServoAngle(),
+        turnRight ? "R" : "L"
+    );
+
+    if (scannedRightDist > 0 || scannedLeftDist > 0) {
+        Serial.printf(" | Scan R:%ld L:%ld", scannedRightDist, scannedLeftDist);
+    }
+    Serial.println();
 }

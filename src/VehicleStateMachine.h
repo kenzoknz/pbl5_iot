@@ -3,17 +3,32 @@
 
 #include "Config.h"
 
+enum ScanPhase {
+    SCAN_IDLE,              // Chưa bắt đầu quét
+    SCAN_MOVING_RIGHT,      // Đã ra lệnh quay phải, đang chờ servo ổn định
+    SCAN_READING_RIGHT,     // Servo ổn định → đọc buffer ngay
+    SCAN_MOVING_LEFT,       // Đã ra lệnh quay trái, đang chờ servo ổn định
+    SCAN_READING_LEFT,      // Servo ổn định → đọc buffer ngay
+    SCAN_RETURNING_CENTER,  // Về giữa, chờ ổn định
+    SCAN_COMPLETED          // Ra quyết định hướng đi
+};
+
 class VehicleStateMachine {
 public:
     static void begin();
     static void update();
     static void debugOutput();
-    static State getCurrentState() { return currentState; }
+    static State getCurrentState() { 
+        return currentState; }
 
 private:
     static State currentState;
     static unsigned long stateStartTime;
-    static unsigned long lastDebugTime;
+    static unsigned long lastDebugTime; 
+
+    //ScanPhase
+    static ScanPhase currentScanPhase;
+    static unsigned long lastScanStepTime;
     
     // Dữ liệu quét
     static long scannedRightDist;
@@ -21,7 +36,7 @@ private:
     static bool turnRight;
     static bool scanCompleted;  // Đánh dấu đã quét xong
     
-    // Xử lý từng state
+    // Handlers
     static void handleNormalState(long frontDist);
     static void handleSlowState(long frontDist);
     static void handleTurnState(long frontDist, long backDist);
@@ -29,6 +44,7 @@ private:
     static void handleTurningState(unsigned long now);
     static void handleResumingState(long frontDist, unsigned long now);
     static void handleStopState(long frontDist);
+
 };
 
 #endif
