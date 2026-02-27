@@ -9,7 +9,6 @@ float MPUSensor::currentAccelY = 0;
 float MPUSensor::lastAccelMagnitude = 0;
 bool  MPUSensor::collisionFlag = false;
 bool  MPUSensor::tiltFlag = false;
-
 TaskHandle_t MPUSensor::mpuTaskHandle = NULL;
 
 SemaphoreHandle_t mpuMutex;
@@ -42,7 +41,7 @@ bool MPUSensor::begin() {
 
     xTaskCreatePinnedToCore(
         mpuTask, "MPUTask", 4096, NULL,
-        3,                  // Priority cao hơn sensor siêu âm (3 > 2)
+        PRIORITY_SENSORS+1,                  // Priority cao hơn sensor siêu âm (3 > 2)
         &mpuTaskHandle,     // ← Lưu handle
         1                   // Core 1 — cùng core với Decision Task
     );
@@ -51,7 +50,6 @@ bool MPUSensor::begin() {
 }
 
 void MPUSensor::mpuTask(void *pvParameters) {
-
     const TickType_t sampleRate = pdMS_TO_TICKS(10); // 100Hz
 
     while (true) {
@@ -63,7 +61,6 @@ void MPUSensor::mpuTask(void *pvParameters) {
         float az = mpu.getAccZ();
 
         float accelMagnitude = sqrt(ax*ax + ay*ay + az*az);
-
         float accelChange = abs(accelMagnitude - lastAccelMagnitude);
 
         bool collision = (accelChange > COLLISION_THRESHOLD);
@@ -119,6 +116,7 @@ bool MPUSensor::checkCollision() {
     bool flag;
     xSemaphoreTake(mpuMutex, portMAX_DELAY);
     flag = collisionFlag;
+    collisionFlag = false;  // Reset sau khi đọc
     xSemaphoreGive(mpuMutex);
     return flag;
 }

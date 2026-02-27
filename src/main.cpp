@@ -14,12 +14,12 @@ void vAppTask(void *pvParameters);
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("=== KHOI TAO HE THONG ESP32 MULTI-TASKING ===");
+    Serial.println("=== ESP32 ROBOT ===");
 
-    // 1. Khởi tạo phần cứng (Đã bao gồm tạo Task Sensor bên trong các module)
-    UltrasonicSensor::begin(); // Đã tạo 2 task đọc cảm biến trên Core 0
+    // 1. phần cứng
+    UltrasonicSensor::begin(); // 4 cam bien -> 4 tasks Core 0
     
-    if (!MPUSensor::begin()) { // Đã tạo mpuTask trên Core 1
+    if (!MPUSensor::begin()) { // mpuTask trên Core 1
         Serial.println("!!! DUNG LAI: Loi MPU6050 !!!");
         while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
@@ -27,7 +27,7 @@ void setup() {
     MotorController::begin();
     VehicleStateMachine::begin();
 
-    // 2. Tạo Task Xử lý Logic (State Machine) - Chạy trên Core 1
+    // 2. Task Xử lý Logic (State Machine) -  Core 1, 20Hz
     // Nhiệm vụ: Ra quyết định điều hướng dựa trên dữ liệu từ SensorTask
     xTaskCreatePinnedToCore(
         vLogicTask,             // Hàm thực thi
@@ -39,7 +39,7 @@ void setup() {
         1                       // Chạy trên Core 1 (Xử lý tính toán)
     );
 
-    // 3. Tạo Task App (Dự phòng cho chế độ điều khiển qua App) - Chạy trên Core 0
+    // 3. Task App - Core 0, 20Hz
     // Nhiệm vụ: Nhận lệnh từ WiFi/Bluetooth mà không block hệ thống
     xTaskCreatePinnedToCore(
         vAppTask,
@@ -63,7 +63,7 @@ void setup() {
  */
 void vLogicTask(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(50); // Chạy ổn định ở 20Hz
+    const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz
 
     for (;;) {
         // Chỉ chạy logic tự hành nếu đang ở chế độ AUTONOMOUS
@@ -71,14 +71,12 @@ void vLogicTask(void *pvParameters) {
             VehicleStateMachine::update();
         }
 
-        // Luôn cập nhật Output cho Motor (Smooth transition)
-        // Lưu ý: Các hàm smooth này đã được tối ưu trong MotorController
-        
+        // Luôn cập nhật Output cho Motor (Smooth transition)        
         #ifdef DEBUG_SENSOR
         VehicleStateMachine::debugOutput();
         #endif
 
-        // Đợi cho đến chu kỳ tiếp theo (Tối ưu hơn delay() thường)
+        // Đợi cho đến chu kỳ tiếp theo
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
@@ -91,7 +89,7 @@ void vAppTask(void *pvParameters) {
     for (;;) {
         // Ví dụ: Kiểm tra dữ liệu từ Serial/App
         // Nếu nhận lệnh MANUAL: 
-        // 1. UltrasonicSensor::setMode(OperationMode::MANUAL); -> Tự động Suspend Sensor Tasks
+        // 1. UltrasonicSensor::setMode(OperationMode::MANUAL); -> Tự động Suspend 4 Sensor Tasks
         // 2. Xử lý lệnh di chuyển trực tiếp từ người dùng.
         
         vTaskDelay(pdMS_TO_TICKS(100)); // Kiểm tra mỗi 100ms
@@ -99,5 +97,4 @@ void vAppTask(void *pvParameters) {
 }
 
 void loop() {
-    // Để trống hoàn toàn vì hệ thống đã chạy đa nhiệm Task
 }

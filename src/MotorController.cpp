@@ -7,25 +7,23 @@ SemaphoreHandle_t motorMutex;
 
 // Static member definitions
 Servo MotorController::steerServo;           // Servo lái bánh xe
-Servo MotorController::usSensorServo;        // Servo quay siêu âm
 int MotorController::currentSpeed = 0;
 int MotorController::targetSpeed = 0;
 int MotorController::steerServoAngle = 90;
 int MotorController::targetSteerServoAngle = 90;
-int MotorController::usSensorServoAngle = 90;
 int MotorController::leftMotorSpeed = 0;
 int MotorController::rightMotorSpeed = 0;
 
 // Biến lưu trạng thái phần cứng cuối cùng (Tối ưu giảm tải Hardware Bus)
-static int lastLeftPWM = -1;
-static int lastRightPWM = -1;
+// Cache phần cứng -> chỉ ghi khi thay đổi
+static int lastLeftPWM    = -1;
+static int lastRightPWM   = -1;
 static int lastSteerAngle = -1;
-static int lastUSAngle = -1;
 
 void MotorController::begin() {
     motorMutex = xSemaphoreCreateMutex();
 
-    // Setup PWM for motor driver
+    // PWM cho BTS7960 motor driver
     ledcSetup(PWM_CHANNEL_RPWM, PWM_FREQ, PWM_RESOLUTION);
     ledcSetup(PWM_CHANNEL_LPWM, PWM_FREQ, PWM_RESOLUTION);
     ledcAttachPin(RPWM, PWM_CHANNEL_RPWM);
@@ -36,31 +34,16 @@ void MotorController::begin() {
     digitalWrite(REN, HIGH);
     digitalWrite(LEN, HIGH);
 
-    // Setup servos
+    // servo lái
     ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
-    
-    // Servo lái bánh xe
     steerServo.setPeriodHertz(50);
     steerServo.attach(SERVO_STEER_PIN, 500, 2400);
-    // delay(200);
     steerServo.write(90);
     
-    // Servo quay cảm biến siêu âm
-    usSensorServo.setPeriodHertz(50);
-    usSensorServo.attach(SERVO_US_FRONT_PIN, 500, 2400);
-    // delay(200);
-    usSensorServo.write(90);
-    
-    Serial.println("2 servos initialized: Steering + US Sensor");
+    Serial.println("[MOTOR] Initialized: BTS7960 + Steering Servo");
 }
 
-// ========== SERVO LÁI BÁNH XE ==========
-// void MotorController::setSteerServoAngle(int angle) {
-//     steerServoAngle = constrain(angle, 40, 140);
-//     steerServo.write(steerServoAngle);
-// }
-
+// ========== SERVO LÁI ==========
 void MotorController::smoothSteerServoTransition() {
     xSemaphoreTake(motorMutex, portMAX_DELAY);
 
@@ -78,19 +61,7 @@ void MotorController::smoothSteerServoTransition() {
     xSemaphoreGive(motorMutex);
 }
 
-// ========== SERVO CẢM BIẾN SIÊU ÂM ==========
-void MotorController::setUSSensorServoAngle(int angle) {
-    int constrainedAngle = constrain(angle, 0, 180);
-    
-    // Chỉ cập nhật khi góc mới khác góc cũ
-    if (constrainedAngle != lastUSAngle) {
-        usSensorServo.write(constrainedAngle);
-        lastUSAngle = constrainedAngle;
-        usSensorServoAngle = constrainedAngle;
-    }
-    // delay(SERVO_SCAN_DELAY_MS);  // Chờ servo quay ổn định
-}
-
+// ========== SPEED LIMITING BY STEERING ==========
 void MotorController::limitSpeedBySteering() {
     int deviation = abs(steerServoAngle - 90);
     
@@ -103,7 +74,7 @@ void MotorController::limitSpeedBySteering() {
     } 
     else if (deviation > 25) {  // Cua GẮT (góc 115-125° hoặc 55-65°)
         if (targetSpeed > 0 && targetSpeed < 150) {
-            targetSpeed = 150;  // Tốc độ cao
+            targetSpeed = MEDIUM_TURN_BOOST;  // Tốc độ cao
         }
     }
     else if (deviation > 15) {  // Cua VỪA (góc 105-115° hoặc 65-75°)
@@ -113,15 +84,17 @@ void MotorController::limitSpeedBySteering() {
     }
     else if (deviation > 10) {  // Cua NHẸ (góc 100-105° hoặc 75-80°)
         if (targetSpeed > 0 && targetSpeed < 135) {
-            targetSpeed = 135;
+            targetSpeed = LIGHT_TURN_BOOST;
         }
     }
     // Nếu cua < 10° thì giữ nguyên targetSpeed (chạy thẳng)
+
 }
 
+// ========== SMOOTH SPEED ==========
 void MotorController::smoothSpeedTransition() {
     xSemaphoreTake(motorMutex, portMAX_DELAY);
-    int step = 18;  // Tăng từ 12 lên 18 để tăng tốc nhanh hơn khi cua
+    int step = 18;  // 12 -> 18: tăng tốc nhanh hơn khi cua
 
     if (targetSpeed > 0 && targetSpeed < MIN_RUN_SPEED)
         targetSpeed = MIN_RUN_SPEED;
@@ -147,6 +120,7 @@ void MotorController::smoothSpeedTransition() {
     xSemaphoreGive(motorMutex);
 }
 
+// ========== DIFFERENTIAL STEERING ==========
 void MotorController::calculateDifferentialSteering(int baseSpeed) {
     if (baseSpeed == 0) {
         leftMotorSpeed = 0;
@@ -157,12 +131,12 @@ void MotorController::calculateDifferentialSteering(int baseSpeed) {
     // Tính độ lệch từ góc servo lái (90° = thẳng)
     int servoDeviation = steerServoAngle - 90;
     
-    // === BÙ TRỪ GÓC NGHIÊNG NGANG ===
+    // Bù trừ góc nghiêng từ MPU6050
     float currentAngleX = MPUSensor::getCurrentAngleX();
     float currentAngleY = MPUSensor::getCurrentAngleY();
     float currentAccelY = MPUSensor::getCurrentAccelY();
     
-    float tiltCompensation = currentAngleX * 0.3;  // Mỗi 1° nghiêng → 0.3% chênh lệch
+    float tiltCompensation = currentAngleX * 0.3;  // Mỗi 1 độ nghiêng -> 0.3% chênh lệch
     
     
     // === ĐIỀU CHỈNH THEO GIA TỐC LY TÂM ===
@@ -211,6 +185,7 @@ void MotorController::calculateDifferentialSteering(int baseSpeed) {
     rightMotorSpeed = constrain(rightMotorSpeed, -255, 255);
 }
 
+// ========== MOTOR OUTPUT ==========
 void MotorController::moveDifferential(int leftSpeed, int rightSpeed) {
     // Dùng logic Max Speed để thắng ma sát khi cua
     int pwmValue;
@@ -246,16 +221,6 @@ void MotorController::moveDifferential(int leftSpeed, int rightSpeed) {
         lastRightPWM = currentRightPWM;
     }
 }
-
-// void MotorController::moveForward(int pwm) {
-//     ledcWrite(PWM_CHANNEL_RPWM, pwm);
-//     ledcWrite(PWM_CHANNEL_LPWM, 0);
-// }
-
-// void MotorController::moveBackward(int pwm) {
-//     ledcWrite(PWM_CHANNEL_RPWM, 0);
-//     ledcWrite(PWM_CHANNEL_LPWM, pwm);
-// }
 
 void MotorController::stopMotor() {
     if (lastLeftPWM != 0 || lastRightPWM != 0) {

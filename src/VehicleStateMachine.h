@@ -3,16 +3,6 @@
 
 #include "Config.h"
 
-enum ScanPhase {
-    SCAN_IDLE,              // Chưa bắt đầu quét
-    SCAN_MOVING_RIGHT,      // Đã ra lệnh quay phải, đang chờ servo ổn định
-    SCAN_READING_RIGHT,     // Servo ổn định → đọc buffer ngay
-    SCAN_MOVING_LEFT,       // Đã ra lệnh quay trái, đang chờ servo ổn định
-    SCAN_READING_LEFT,      // Servo ổn định → đọc buffer ngay
-    SCAN_RETURNING_CENTER,  // Về giữa, chờ ổn định
-    SCAN_COMPLETED          // Ra quyết định hướng đi
-};
-
 class VehicleStateMachine {
 public:
     static void begin();
@@ -25,26 +15,22 @@ private:
     static State currentState;
     static unsigned long stateStartTime;
     static unsigned long lastDebugTime; 
+    static bool turnRight;  // Hướng rẽ cuối cùng được chọn
 
-    //ScanPhase
-    static ScanPhase currentScanPhase;
-    static unsigned long lastScanStepTime;
-    
-    // Dữ liệu quét
-    static long scannedRightDist;
-    static long scannedLeftDist;
-    static bool turnRight;
-    static bool scanCompleted;  // Đánh dấu đã quét xong
-    
-    // Handlers
-    static void handleNormalState(long frontDist);
-    static void handleSlowState(long frontDist);
-    static void handleTurnState(long frontDist, long backDist);
-    static void handleBackingState(long backDist, unsigned long now);
-    static void handleTurningState(unsigned long now);
-    static void handleResumingState(long frontDist, unsigned long now);
-    static void handleStopState(long frontDist);
+    // ── QUYẾT ĐỊNH HƯỚNG ĐI ──
+    // Phân tích 4 cảm biến và trả về State phù hợp
+    static State decideDirection(long front, long right, long left, long back);
 
+    // ── HANDLERS ──
+    static void handleNormalState(long front, long right, long left);
+    static void handleSlowState(long front, long right, long left);
+    static void handleAvoidLeftState(long front, long right, long left);
+    static void handleAvoidRightState(long front, long right, long left);
+    static void handleTurnLeftState(long front, long right, long left, long back, unsigned long now);
+    static void handleTurnRightState(long front, long right, long left, long back, unsigned long now);
+    static void handleBackingState(long back, unsigned long now);
+    static void handleStopState(long front, long right, long left, long back);
+    static void handleEmergencyState(long front);
 };
 
 #endif
