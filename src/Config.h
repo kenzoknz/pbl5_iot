@@ -80,7 +80,7 @@
 #define MIN_RUN_SPEED 150 // Tốc độ tối thiểu để thắng lực ma sát 190
 #define CRUISE_SPEED 70 // 3 tầng: 111, test 2 tầng 70
 #define FAST_SPEED 90 //3 tâng 250
-#define BACK_SPEED 150 // 3 tầng 220
+#define BACK_SPEED 170 // 3 tầng 220
 
 #define SHARP_TURN_BOOST 220   // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát
 #define MEDIUM_TURN_BOOST 180  // Cua vừa (góc 60-80°) - Tăng tốc để thắng ma sát
