@@ -80,7 +80,9 @@
 #define MIN_RUN_SPEED 150 // Tốc độ tối thiểu để thắng lực ma sát 190
 #define CRUISE_SPEED 70 // 3 tầng: 111, test 2 tầng 70
 #define FAST_SPEED 90 //3 tâng 250
-#define BACK_SPEED 170 // 3 tầng 220
+#define BACK_SPEED 170 // 3 tầng 220, 2 tầng cũ 150, test 170
+#define ESCAPE_SPEED 200        // [MỚI] Tốc độ xoay thoát bẫy
+// Cần đủ cao để thắng ma sát khi xoay tại chỗ — đo thực tế
 
 #define SHARP_TURN_BOOST 220   // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát
 #define MEDIUM_TURN_BOOST 180  // Cua vừa (góc 60-80°) - Tăng tốc để thắng ma sát
@@ -97,6 +99,9 @@
 #define PREPARE_DISTANCE  70
 #define SIDE_DANGER_DIST  45    // Ngưỡng nguy hiểm cho cảm biến bên
 #define BACK_DANGER_DISTANCE 45
+// [MỚI] Ngưỡng so sánh hướng — chênh lệch tối thiểu để ưu tiên 1 bên
+#define DIRECTION_HYSTERESIS 8  // cm — tránh dao động khi Left ≈ Right
+// Chỉnh DIRECTION_HYSTERESIS (hiện 8cm): Nếu robot vẫn dao động LEFT↔RIGHT → tăng lên 12-15cm
 
 /* ================== TIME ================== */
 // #define BACK_TIME 3000
@@ -118,7 +123,8 @@ enum State {
   BACKING,        // Lùi (cả 3 phía trước đều bị chặn)
   STOP,           // Bị kẹt hoàn toàn
   EMERGENCY,      // Va chạm / nghiêng
-  MANUAL_CONTROL  // Chế độ người dùng điều khiển
+  MANUAL_CONTROL,  // Chế độ người dùng điều khiển
+  ESCAPE
 };
 
 #endif
