@@ -823,9 +823,9 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
         MotorController::setTargetSpeed(ESCAPE_SPEED);
 
         if (escapeDir == TURN_LEFT) {
-            MotorController::setTargetSteerServoAngle(140); // Xoay trái tối đa
+            MotorController::setTargetSteerServoAngle(120); // Xoay trái tối đa
         } else {
-            MotorController::setTargetSteerServoAngle(40);  // Xoay phải tối đa
+            MotorController::setTargetSteerServoAngle(60);  // Xoay phải tối đa
         }
         return;
     }
