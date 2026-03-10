@@ -1,0 +1,85 @@
+#ifndef NETWORK_MANAGER_H
+#define NETWORK_MANAGER_H
+
+/**
+ * NetworkManager.h
+ * Quản lý kết nối WiFi, HTTP (GET/POST/PUT), và WebSocket client.
+ * WebSocket dùng thư viện: Links2004/WebSockets (platformio: links2004/WebSockets)
+ */
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
+
+// ══════════════════════════════════════════
+//  CẤU HÌNH — Chỉnh sửa theo môi trường
+// ══════════════════════════════════════════
+#define WIFI_SSID            "S-Group"        // Tên WiFi
+#define WIFI_PASS            "sgroup11235"
+
+#define SERVER_HOST          "192.168.1.6"   // IP server (không có http://)
+#define SERVER_PORT          5000
+#define BASE_URL             "http://" SERVER_HOST ":" "5000"
+
+// WebSocket endpoint (server sẽ lắng nghe tại ws://SERVER_HOST:PORT/ws/robot)
+#define WS_PATH              "/ws/robot"
+
+// Bỏ comment dòng dưới nếu server yêu cầu Bearer token
+// #define AUTH_TOKEN        "your-token-here"
+
+// ══════════════════════════════════════════
+//  TIMING
+// ══════════════════════════════════════════
+#define POLL_INTERVAL_MANUAL   500      // ms — polling nhanh khi MANUAL
+#define POLL_INTERVAL_AUTO    2000      // ms — polling chậm khi AUTONOMOUS
+#define MAX_BACKOFF_MS       60000      // ms — backoff tối đa khi mất WiFi
+#define WIFI_TIMEOUT_MS      15000      // ms — timeout kết nối WiFi ban đầu
+#define HTTP_TIMEOUT_MS       8000      // ms — timeout HTTP request
+
+// Kiểu callback nhận message từ WebSocket
+typedef void (*WsMessageCb)(const String& message);
+
+// ══════════════════════════════════════════
+class NetworkManager {
+public:
+    // ── WiFi ──
+    static bool initWiFi();
+    static bool isWiFiConnected();
+    static void reconnectIfNeeded();
+
+    // ── WebSocket ──
+    static void initWebSocket(WsMessageCb callback);
+    static void wsLoop();                          // Gọi liên tục trong AppTask
+    static bool wsConnected();
+    static void wsSend(const String& jsonStr);     // Gửi JSON string qua WS
+
+    // ── HTTP ──
+    /** Trả về body string (rỗng nếu lỗi) */
+    static String httpGet(const String& path);
+
+    /** Trả về HTTP status code (-1 nếu network error) */
+    static int    httpPost(const String& path, const String& jsonBody);
+
+    /** Trả về HTTP status code (-1 nếu network error) */
+    static int    httpPut(const String& path, const String& jsonBody = "{}");
+
+private:
+    static WebSocketsClient _ws;
+    static volatile bool    _wsConnected;
+    static WsMessageCb      _wsCallback;
+
+    // Backoff WiFi reconnect
+    static uint32_t _backoffMs;
+    static uint32_t _lastReconnectAttempt;
+
+    // Handler nội bộ — phải là static plain function để truyền vào WebSocketsClient
+    static void _onWsEvent(WStype_t type, uint8_t* payload, size_t length);
+
+    // Helpers
+    static String _url(const String& path);
+    static void   _addHeaders(HTTPClient& client);
+};
+
+#endif // NETWORK_MANAGER_H
