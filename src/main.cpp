@@ -79,6 +79,13 @@ void vLogicTask(void *pvParameters) {
         // Chỉ chạy logic tự hành nếu đang ở chế độ AUTONOMOUS
         if (UltrasonicSensor::getMode() == OperationMode::AUTONOMOUS) {
             VehicleStateMachine::update();
+        } else {
+            // MANUAL mode: Vẫn cần cập nhật servo và motor để phản hồi lệnh
+            // Chỉ chạy output pipeline, không chạy state machine logic
+            MotorController::smoothSteerServoTransition();
+            MotorController::limitSpeedBySteering();
+            MotorController::updatePID();
+            MotorController::smoothSpeedTransition();
         }
 
         // Luôn cập nhật Output cho Motor (Smooth transition)        
@@ -129,9 +136,11 @@ void vAppTask(void *pvParameters) {
         // Tick WebSocket (xử lý ping/pong, nhận frame, gửi pending)
         NetworkManager::wsLoop();
 
-        // Fallback HTTP polling khi WebSocket chưa / mất kết nối
+        // Fallback HTTP polling CHỈ KHI WebSocket KHÔNG kết nối
+        // Khi WS hoạt động, MODE_CHANGE sẽ được push realtime
         if (!NetworkManager::wsConnected()) {
             CommandProcessor::pollCommands();
+            CommandProcessor::pollMode();  // Sync mode với database
         }
 
         // Gửi status robot lên server qua WebSocket (throttled 5s)

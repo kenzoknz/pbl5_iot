@@ -9,6 +9,7 @@
 OperationMode CommandProcessor::_mode          = AUTONOMOUS;
 uint32_t      CommandProcessor::_lastPollTime  = 0;
 uint32_t      CommandProcessor::_lastStatusTime = 0;
+uint32_t      CommandProcessor::_lastModePollTime = 0;
 
 // ══════════════════════════════════════════
 //  Init
@@ -56,6 +57,46 @@ void CommandProcessor::pollCommands() {
 }
 
 // ══════════════════════════════════════════
+//  HTTP Mode Polling (fallback khi WS ngắt)
+// ══════════════════════════════════════════
+
+void CommandProcessor::pollMode() {
+    if (millis() - _lastModePollTime < MODE_POLL_INTERVAL_MS) return;
+    _lastModePollTime = millis();
+
+    Serial.println("[CMD] Polling HTTP /api/robot/mode ...");
+    String response = NetworkManager::httpGet("/api/robot/mode");
+    if (response.isEmpty()) return;
+
+    // Parse JSON
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, response);
+    if (err) {
+        Serial.printf("[CMD] Lỗi JSON mode poll: %s\n", err.c_str());
+        return;
+    }
+
+    if (!doc["success"].as<bool>()) {
+        Serial.println("[CMD] Mode poll: server trả về success=false");
+        return;
+    }
+
+    String modeStr = doc["data"]["mode"] | "";
+    Serial.printf("[CMD] Mode poll: server mode = %s, current mode = %s\n", 
+                  modeStr.c_str(), 
+                  (_mode == AUTONOMOUS ? "AUTONOMOUS" : "MANUAL"));
+
+    // Sync mode nếu khác
+    if (modeStr == "AUTONOMOUS" && _mode != AUTONOMOUS) {
+        Serial.println("[CMD] 🔄 Mode sync: AUTONOMOUS (từ DB)");
+        setMode(AUTONOMOUS);
+    } else if (modeStr == "MANUAL" && _mode != MANUAL) {
+        Serial.println("[CMD] 🔄 Mode sync: MANUAL (từ DB)");
+        setMode(MANUAL);
+    }
+}
+
+// ══════════════════════════════════════════
 //  WebSocket message handler
 // ══════════════════════════════════════════
 
@@ -78,9 +119,11 @@ void CommandProcessor::handleWsMessage(const String& message) {
     } else if (type == "MODE_CHANGE") {
         // Server yêu cầu đổi mode: { "type": "MODE_CHANGE", "data": {"mode": "MANUAL"} }
         String modeStr = doc["data"]["mode"] | "";
+        Serial.printf("[WS] ▶ MODE_CHANGE request: %s\n", modeStr.c_str());
+        
         if      (modeStr == "AUTONOMOUS") setMode(AUTONOMOUS);
         else if (modeStr == "MANUAL")     setMode(MANUAL);
-        else Serial.printf("[WS] Mode không hợp lệ: %s\n", modeStr.c_str());
+        else Serial.printf("[WS] ⚠ Mode không hợp lệ: %s\n", modeStr.c_str());
 
     } else if (type == "PING") {
         NetworkManager::wsSend("{\"type\":\"PONG\"}");
@@ -181,8 +224,11 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
     }
 
     // ── Đánh dấu đã xử lý và ghi log ────────────────────────────
-    markExecuted(id);
-    sendLog("command_executed", "id=" + String(id) + " " + command + " OK");
+    // id < 0 = realtime DIRECT_COMMAND từ browser — không có bản ghi DB
+    if (id >= 0) {
+        markExecuted(id);
+        sendLog("command_executed", "id=" + String(id) + " " + command + " OK");
+    }
 }
 
 // ══════════════════════════════════════════
@@ -280,6 +326,32 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         speed = constrain(speed, 0, 255);
         MotorController::setTargetSpeed(speed);
         Serial.printf("[CMD] SET_SPEED %d\n", speed);
+
+    } else if (command == "JOYSTICK") {
+        /*
+         * Realtime joystick — gửi từ browser mỗi ~150ms qua WebSocket
+         * Tham số: { "speed": -255..255, "steer": -45..45 }
+         *   speed > 0 = tiến, speed < 0 = lùi
+         *   steer > 0 = phải, steer < 0 = trái (degrees)
+         */
+        int spd   = params["speed"] | 0;
+        int angle = params["steer"] | 0;
+
+        spd   = constrain(spd,   -255, 255);
+        angle = constrain(angle,  -45,  45);
+
+        if (abs(spd) < 12 && abs(angle) < 4) {
+            // Deadzone — dừng hẳn
+            MotorController::stopMotor();
+            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+        } else {
+            // Đặt servo lái
+            int servoAngle = constrain(SERVO_STRAIGHT + angle, SERVO_LEFT_MAX, SERVO_RIGHT_MAX);
+            MotorController::setTargetSteerServoAngle(servoAngle);
+            // Điều khiển motor
+            MotorController::setTargetSpeed(abs(spd));
+            MotorController::moveDifferential(spd, spd);
+        }
 
     } else {
         Serial.printf("[CMD] Lệnh không xử lý: %s\n", command.c_str());

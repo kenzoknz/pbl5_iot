@@ -28,6 +28,9 @@
 // Tần suất gửi status update qua WebSocket (ms)
 #define STATUS_INTERVAL_MS  5000
 
+// Tần suất poll mode từ HTTP (ms) - fallback khi WS ngắt
+#define MODE_POLL_INTERVAL_MS  3000
+
 // ══════════════════════════════════════════
 class CommandProcessor {
 public:
@@ -43,6 +46,13 @@ public:
      * Dùng làm fallback khi WebSocket ngắt kết nối.
      */
     static void pollCommands();
+
+    /**
+     * Polling mode từ HTTP GET /api/robot/mode
+     * Sync mode với database khi WebSocket không hoạt động.
+     * Tự throttle — chỉ poll mỗi MODE_POLL_INTERVAL_MS.
+     */
+    static void pollMode();
 
     /**
      * Xử lý message JSON nhận trực tiếp từ WebSocket.
@@ -62,6 +72,7 @@ private:
     static OperationMode _mode;
     static uint32_t      _lastPollTime;
     static uint32_t      _lastStatusTime;
+    static uint32_t      _lastModePollTime;
 
     // ── Core ──
     static void processCommand(const JsonObject& cmd);
