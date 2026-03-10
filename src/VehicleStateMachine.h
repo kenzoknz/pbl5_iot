@@ -10,6 +10,9 @@ public:
     static void debugOutput();
     static State getCurrentState() { 
         return currentState; }
+    
+    // [FIX] Public để CommandProcessor có thể reset khi đổi mode
+    static void resetTrapCounters();
 
 private:
     static State currentState;
@@ -42,7 +45,6 @@ private:
     // ══════ Anti-Trap Logic ══════
     static void updateTrapDetection(State newState);
     static bool shouldEscape();
-    static void resetTrapCounters();
 
     // ── HANDLERS ──
     static void handleNormalState(long front, long right, long left);

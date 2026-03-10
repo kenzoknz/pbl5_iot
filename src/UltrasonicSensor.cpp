@@ -7,6 +7,7 @@
 TaskHandle_t UltrasonicSensor::frontGroupTaskHandle = NULL;
 TaskHandle_t UltrasonicSensor::backTaskHandle       = NULL;
 OperationMode UltrasonicSensor::currentMode = OperationMode::AUTONOMOUS;
+volatile bool UltrasonicSensor::tasksEnabled = true;
 
 
 // ================== BUFFERS ==================
@@ -94,13 +95,11 @@ void UltrasonicSensor::setMode(OperationMode mode) {
     currentMode = mode;
 
     if (mode == OperationMode::MANUAL) {
-        if (frontGroupTaskHandle) vTaskSuspend(frontGroupTaskHandle);
-        if (backTaskHandle)       vTaskSuspend(backTaskHandle);
-        Serial.println("[SENSOR] MANUAL — tasks suspended");
+        tasksEnabled = false;  // Tasks sẽ tự skip sensor reading
+        Serial.println("[SENSOR] MANUAL — sensor reading disabled");
     } else {
-        if (frontGroupTaskHandle) vTaskResume(frontGroupTaskHandle);
-        if (backTaskHandle)       vTaskResume(backTaskHandle);
-        Serial.println("[SENSOR] AUTONOMOUS — tasks resumed");
+        tasksEnabled = true;   // Tasks tiếp tục đọc sensors
+        Serial.println("[SENSOR] AUTONOMOUS — sensor reading enabled");
     }
 }
 
@@ -290,6 +289,12 @@ void UltrasonicSensor::frontGroupSensorTask(void *pvParameters) {
     const TickType_t xPeriod = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
 
     for (;;) {
+        // Kiểm tra cờ enable trước khi đọc sensors (tránh deadlock khi chuyển mode)
+        if (!tasksEnabled) {
+            vTaskDelayUntil(&xLastWakeTime, xPeriod);
+            continue;
+        }
+
         // ── 1. Quét LEFT ──
         long rawLeft = readDistanceRaw(TRIG_LEFT, ECHO_LEFT);
 
@@ -327,6 +332,12 @@ void UltrasonicSensor::backSensorTask(void *pvParameters) {
     const TickType_t xPeriod = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
 
     for (;;) {
+        // Kiểm tra cờ enable trước khi đọc sensors
+        if (!tasksEnabled) {
+            vTaskDelayUntil(&xLastWakeTime, xPeriod);
+            continue;
+        }
+
         long rawBack = readDistanceRaw(TRIG_BACK, ECHO_BACK);
 
         xSemaphoreTake(backMutex, portMAX_DELAY);

@@ -227,15 +227,23 @@ void VehicleStateMachine::update() {
     unsigned long now = millis();
 
     // ══════ TRAP DETECTION — Kiểm tra trước khi xử lý state ══════
+    // [FIX] Chỉ cho phép ESCAPE nếu dữ liệu cảm biến hợp lệ (> 0)
     if (currentState != ESCAPE && currentState != EMERGENCY && shouldEscape()) {
-        MotorController::stopMotor();
-        escapeMode = true;
-        currentState = ESCAPE;
-        stateStartTime = now;
-        // Reset encoder để đo quãng đường xoay
-        EncoderSensor::resetDistance();
-        Serial.println("[FSM] >>> ENTERING ESCAPE MODE <<<");
-        // Không return — để handleEscapeState xử lý ngay
+        // Validate sensor data trước khi vào ESCAPE
+        if (front > 0 && right > 0 && left > 0 && back > 0) {
+            MotorController::stopMotor();
+            escapeMode = true;
+            currentState = ESCAPE;
+            stateStartTime = now;
+            // Reset encoder để đo quãng đường xoay
+            EncoderSensor::resetDistance();
+            Serial.println("[FSM] >>> ENTERING ESCAPE MODE <<<");
+            // Không return — để handleEscapeState xử lý ngay
+        } else {
+            Serial.println("[FSM] ⚠ ESCAPE postponed: waiting for valid sensor data");
+            // Reset trap counters để không spam check
+            resetTrapCounters();
+        }
     }
 
     // 3. DỪNG KHẨN CẤP NẾU PHÍA TRƯỚC QUÁ GẦN
@@ -261,8 +269,8 @@ void VehicleStateMachine::update() {
         case TURN_RIGHT:  handleTurnRightState(front, right, left, back, now);  break;
         case BACKING:     handleBackingState(back, now);                        break;
         case STOP:        handleStopState(front, right, left, back);            break;
-        case EMERGENCY:   handleEmergencyState(front); 
-        case ESCAPE:      handleEscapeState(front, right, left, back, now);     break;                         break;
+        case EMERGENCY:   handleEmergencyState(front);                          break;
+        case ESCAPE:      handleEscapeState(front, right, left, back, now);     break;
         default:          currentState = NORMAL; break;
     }
 

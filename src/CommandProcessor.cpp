@@ -374,6 +374,8 @@ void CommandProcessor::setMode(OperationMode mode) {
 
     if (mode == AUTONOMOUS) {
         Serial.println("[CMD] ══ Chuyển sang AUTONOMOUS ══");
+        // [FIX] Reset trap counters khi chuyển sang AUTO để tránh trigger ESCAPE ngay lập tức
+        VehicleStateMachine::resetTrapCounters();
         sendLog("mode_change", "switched to AUTONOMOUS");
     } else {
         // Dừng motor an toàn trước khi nhận lệnh thủ công
