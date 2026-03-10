@@ -2,8 +2,10 @@
 #include "UltrasonicSensor.h"
 #include "MPUSensor.h"
 #include "MotorController.h"
-#include "EncoderSensor.h" 
+#include "EncoderSensor.h"
 #include "VehicleStateMachine.h"
+#include "NetworkManager.h"
+#include "CommandProcessor.h"
 
 // Task Handles để quản lý (Suspend/Resume/Monitor)
 TaskHandle_t xLogicTaskHandle = NULL;
@@ -90,17 +92,53 @@ void vLogicTask(void *pvParameters) {
 }
 
 /**
- * Task App: Nơi xử lý dữ liệu từ người dùng (WiFi/Bluetooth/Serial)
- * Hiện tại để trống, sẵn sàng cho việc tích hợp App sau này
+ * Task App: Kết nối WiFi, WebSocket, nhận lệnh từ Web Server.
+ * Chạy trên Core 0 — non-blocking.
+ *
+ * Luồng:
+ *   1. Kết nối WiFi
+ *   2. Khởi tạo WebSocket → server push lệnh realtime
+ *   3. Vòng lặp:
+ *      - Kiểm tra WiFi, reconnect nếu mất
+ *      - Gọi ws.loop() để xử lý frame WebSocket đến
+ *      - Fallback: HTTP polling khi WS ngắt
+ *      - Gửi status heartbeat mỗi 5s
  */
 void vAppTask(void *pvParameters) {
+    // ── Bước 1: WiFi ──
+    bool wifiOk = NetworkManager::initWiFi();
+    if (!wifiOk) {
+        Serial.println("[APP] Không có WiFi — tiếp tục ở chế độ offline (AUTONOMOUS)");
+    }
+
+    // ── Bước 2: WebSocket ──
+    // Callback: chuyển mọi message WS sang CommandProcessor
+    NetworkManager::initWebSocket([](const String& msg) {
+        CommandProcessor::handleWsMessage(msg);
+    });
+
+    // ── Bước 3: Khởi tạo CommandProcessor ──
+    CommandProcessor::begin();
+
+    Serial.println("[APP] AppTask ready.");
+
     for (;;) {
-        // Ví dụ: Kiểm tra dữ liệu từ Serial/App
-        // Nếu nhận lệnh MANUAL: 
-        // 1. UltrasonicSensor::setMode(OperationMode::MANUAL); -> Tự động Suspend 4 Sensor Tasks
-        // 2. Xử lý lệnh di chuyển trực tiếp từ người dùng.
-        
-        vTaskDelay(pdMS_TO_TICKS(100)); // Kiểm tra mỗi 100ms
+        // Kiểm tra WiFi, tự reconnect với exponential backoff
+        NetworkManager::reconnectIfNeeded();
+
+        // Tick WebSocket (xử lý ping/pong, nhận frame, gửi pending)
+        NetworkManager::wsLoop();
+
+        // Fallback HTTP polling khi WebSocket chưa / mất kết nối
+        if (!NetworkManager::wsConnected()) {
+            CommandProcessor::pollCommands();
+        }
+
+        // Gửi status robot lên server qua WebSocket (throttled 5s)
+        CommandProcessor::sendStatusUpdate();
+
+        // Nhường CPU — 50ms (20Hz), đủ nhạy cho MANUAL control
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
