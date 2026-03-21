@@ -303,24 +303,27 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         int    duration = params["duration_ms"]  | 0;
 
         speed = constrain(speed, 0, 255);
-        MotorController::setTargetSpeed(speed);
 
         if (dir == "FORWARD") {
+            MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
             MotorController::moveDifferential(speed, speed);
             Serial.printf("[CMD] MOVE FORWARD speed=%d\n", speed);
 
         } else if (dir == "BACKWARD") {
+            MotorController::setTargetSpeed(-speed);
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
             MotorController::moveDifferential(-speed, -speed);
             Serial.printf("[CMD] MOVE BACKWARD speed=%d\n", speed);
 
         } else if (dir == "LEFT") {
+            MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_LEFT_MAX);
             MotorController::moveDifferential(speed, speed);
             Serial.printf("[CMD] MOVE LEFT speed=%d\n", speed);
 
         } else if (dir == "RIGHT") {
+            MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_RIGHT_MAX);
             MotorController::moveDifferential(speed, speed);
             Serial.printf("[CMD] MOVE RIGHT speed=%d\n", speed);
@@ -409,7 +412,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             int servoAngle = constrain(SERVO_STRAIGHT + angle, SERVO_LEFT_MAX, SERVO_RIGHT_MAX);
             MotorController::setTargetSteerServoAngle(servoAngle);
             // Điều khiển motor
-            MotorController::setTargetSpeed(abs(spd));
+            MotorController::setTargetSpeed(spd);
             MotorController::moveDifferential(spd, spd);
             _joystickDriveActive = true;
         }
