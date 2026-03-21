@@ -136,6 +136,9 @@ void vAppTask(void *pvParameters) {
         // Tick WebSocket (xử lý ping/pong, nhận frame, gửi pending)
         NetworkManager::wsLoop();
 
+        // Tick portal cấu hình WiFi khi ESP đang ở SoftAP fallback
+        NetworkManager::portalLoop();
+
         // Fallback HTTP polling CHỈ KHI WebSocket KHÔNG kết nối
         // Khi WS hoạt động, MODE_CHANGE sẽ được push realtime
         if (!NetworkManager::wsConnected()) {

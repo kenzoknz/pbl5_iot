@@ -152,10 +152,6 @@ void CommandProcessor::sendStatusUpdate() {
     data["state"]   = (int)VehicleStateMachine::getCurrentState();
     data["rssi"]    = WiFi.RSSI();
     data["uptime"]  = millis() / 1000;
-    data["front"]   = UltrasonicSensor::getFrontDistance();
-    data["left"]    = UltrasonicSensor::getLeftDistance();
-    data["right"]   = UltrasonicSensor::getRightDistance();
-    data["back"]    = UltrasonicSensor::getBackDistance();
 
     String msg;
     serializeJson(doc, msg);
@@ -185,7 +181,7 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
     // ── Safety: Từ chối lệnh chuyển động khi đang EMERGENCY ──────
     State currentState = VehicleStateMachine::getCurrentState();
     if (currentState == EMERGENCY) {
-        bool isSafe = (command == "SET_MODE" || command == "STOP");
+        bool isSafe = (command == "SET_MODE" || command == "STOP" || command == "SET_WIFI");
         if (!isSafe) {
             String msg = "id=" + String(id) + " REJECTED (EMERGENCY state)";
             Serial.println("[CMD] ⚠ " + msg);
@@ -209,6 +205,22 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
         else if (modeStr == "MANUAL")     setMode(MANUAL);
         else {
             Serial.printf("[CMD] SET_MODE: mode không hợp lệ '%s'\n", modeStr.c_str());
+        }
+
+    } else if (command == "SET_WIFI") {
+        String ssid = params["ssid"] | "";
+        String pass = params["password"] | "";
+
+        if (ssid.isEmpty()) {
+            Serial.println("[CMD] SET_WIFI: thiếu ssid");
+            sendLog("wifi_config_failed", "missing ssid");
+        } else {
+            bool ok = NetworkManager::setWiFiCredentials(ssid, pass, true);
+            if (ok) {
+                sendLog("wifi_config", "wifi updated to ssid=" + ssid);
+            } else {
+                sendLog("wifi_config_failed", "failed to apply ssid=" + ssid);
+            }
         }
 
     } else {

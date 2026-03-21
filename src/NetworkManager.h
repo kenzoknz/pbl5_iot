@@ -16,10 +16,10 @@
 // ══════════════════════════════════════════
 //  CẤU HÌNH — Chỉnh sửa theo môi trường
 // ══════════════════════════════════════════
-#define WIFI_SSID            "S-Group"        // Tên WiFi
-#define WIFI_PASS            "sgroup11235"
+#define WIFI_SSID_DEFAULT     "nt"        // Tên WiFi mặc định
+#define WIFI_PASS_DEFAULT     "zxcvbnm@"
 
-#define SERVER_HOST          "192.168.1.6"   // IP server (không có http://)
+#define SERVER_HOST          "172.26.251.144" //"192.168.1.6"   // IP server (không có http://)
 #define SERVER_PORT          5000
 #define BASE_URL             "http://" SERVER_HOST ":" "5000"
 
@@ -48,6 +48,10 @@ public:
     static bool initWiFi();
     static bool isWiFiConnected();
     static void reconnectIfNeeded();
+    static bool setWiFiCredentials(const String& ssid, const String& pass, bool reconnectNow = true);
+    static String getCurrentWiFiSsid();
+    static void portalLoop();
+    static bool isProvisioningMode();
 
     // ── WebSocket ──
     static void initWebSocket(WsMessageCb callback);
@@ -73,6 +77,15 @@ private:
     // Backoff WiFi reconnect
     static uint32_t _backoffMs;
     static uint32_t _lastReconnectAttempt;
+    static uint8_t  _failedReconnects;
+
+    static String _wifiSsid;
+    static String _wifiPass;
+    static bool   _wifiLoaded;
+
+    static bool    _provisioningMode;
+    static bool    _portalReconnectPending;
+    static uint32_t _portalReconnectAt;
 
     // Handler nội bộ — phải là static plain function để truyền vào WebSocketsClient
     static void _onWsEvent(WStype_t type, uint8_t* payload, size_t length);
@@ -80,6 +93,10 @@ private:
     // Helpers
     static String _url(const String& path);
     static void   _addHeaders(HTTPClient& client);
+    static void   _loadWiFiCredentials();
+    static void   _saveWiFiCredentials(const String& ssid, const String& pass);
+    static void   _startProvisionPortal();
+    static void   _stopProvisionPortal();
 };
 
 #endif // NETWORK_MANAGER_H
