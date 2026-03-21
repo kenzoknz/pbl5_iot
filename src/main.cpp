@@ -149,6 +149,9 @@ void vAppTask(void *pvParameters) {
         // Gửi status robot lên server qua WebSocket (throttled 5s)
         CommandProcessor::sendStatusUpdate();
 
+        // Safety watchdog: nếu joystick ngừng gửi realtime command thì tự dừng xe
+        CommandProcessor::tickSafety();
+
         // Nhường CPU — 50ms (20Hz), đủ nhạy cho MANUAL control
         vTaskDelay(pdMS_TO_TICKS(50));
     }

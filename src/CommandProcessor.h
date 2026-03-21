@@ -31,6 +31,9 @@
 // Tần suất poll mode từ HTTP (ms) - fallback khi WS ngắt
 #define MODE_POLL_INTERVAL_MS  3000
 
+// Timeout joystick realtime (ms): quá thời gian này mà không có JOYSTICK mới thì dừng xe
+#define JOYSTICK_WATCHDOG_TIMEOUT_MS  400
+
 // ══════════════════════════════════════════
 class CommandProcessor {
 public:
@@ -66,6 +69,13 @@ public:
      */
     static void sendStatusUpdate();
 
+    /**
+     * Watchdog an toàn cho MANUAL joystick:
+     * nếu đang chạy bằng joystick mà mất cập nhật quá JOYSTICK_WATCHDOG_TIMEOUT_MS
+     * thì tự dừng xe.
+     */
+    static void tickSafety();
+
     static OperationMode getCurrentMode() { return _mode; }
 
 private:
@@ -73,7 +83,9 @@ private:
     static uint32_t      _lastPollTime;
     static uint32_t      _lastStatusTime;
     static uint32_t      _lastModePollTime;
+    static uint32_t      _lastJoystickInputTime;
     static bool          _isHandlingWsMessage;
+    static bool          _joystickDriveActive;
 
     // ── Core ──
     static void processCommand(const JsonObject& cmd);

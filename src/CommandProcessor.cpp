@@ -10,7 +10,9 @@ OperationMode CommandProcessor::_mode          = AUTONOMOUS;
 uint32_t      CommandProcessor::_lastPollTime  = 0;
 uint32_t      CommandProcessor::_lastStatusTime = 0;
 uint32_t      CommandProcessor::_lastModePollTime = 0;
+uint32_t      CommandProcessor::_lastJoystickInputTime = 0;
 bool          CommandProcessor::_isHandlingWsMessage = false;
+bool          CommandProcessor::_joystickDriveActive = false;
 
 // ══════════════════════════════════════════
 //  Init
@@ -18,9 +20,24 @@ bool          CommandProcessor::_isHandlingWsMessage = false;
 
 void CommandProcessor::begin() {
     _mode = AUTONOMOUS;
+    _joystickDriveActive = false;
+    _lastJoystickInputTime = millis();
     UltrasonicSensor::setMode(AUTONOMOUS);
     Serial.println("[CMD] Khởi động — Chế độ: AUTONOMOUS");
     sendLog("system_start", "ESP32 online. Mode: AUTONOMOUS");
+}
+
+void CommandProcessor::tickSafety() {
+    if (_mode != MANUAL) return;
+    if (!_joystickDriveActive) return;
+
+    if (millis() - _lastJoystickInputTime > JOYSTICK_WATCHDOG_TIMEOUT_MS) {
+        MotorController::stopMotor();
+        MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+        MotorController::setTargetSpeed(0);
+        _joystickDriveActive = false;
+        Serial.println("[CMD] Joystick timeout -> STOP for safety");
+    }
 }
 
 // ══════════════════════════════════════════
@@ -119,8 +136,20 @@ void CommandProcessor::handleWsMessage(const String& message) {
     Serial.printf("[WS] Nhận type=%s\n", type.c_str());
 
     if (type == "COMMAND") {
-        // Server push lệnh trực tiếp: { "type": "COMMAND", "data": {...command...} }
-        JsonObject cmd = doc["data"].as<JsonObject>();
+        // Server push lệnh trực tiếp. Hỗ trợ cả 2 dạng:
+        // 1) { "type": "COMMAND", "data": { "id": -1, "command": "...", "parameters": {...} } }
+        // 2) { "type": "COMMAND", "data": { "id": -1, "data": { "command": "...", "parameters": {...} } } }
+        JsonVariant dataVar = doc["data"];
+        JsonObject cmd = dataVar.as<JsonObject>();
+
+        // Fallback cho payload bị bọc thêm một lớp data.
+        if ((!cmd.containsKey("command") || cmd["command"].isNull()) && cmd.containsKey("data")) {
+            JsonObject nested = cmd["data"].as<JsonObject>();
+            if (!nested.isNull()) {
+                cmd = nested;
+            }
+        }
+
         processCommand(cmd);
 
     } else if (type == "MODE_CHANGE") {
@@ -178,12 +207,16 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
     int    id      = cmd["id"]      | -1;
     String command = cmd["command"] | "";
 
-    if (id < 0 || command.isEmpty()) {
-        Serial.println("[CMD] Lệnh thiếu id/command, bỏ qua");
+    if (command.isEmpty()) {
+        Serial.println("[CMD] Lệnh thiếu command, bỏ qua");
         return;
     }
 
-    Serial.printf("[CMD] ▶ id=%d  command=%s\n", id, command.c_str());
+    if (id < 0) {
+        Serial.printf("[CMD] ▶ realtime command=%s (no id)\n", command.c_str());
+    } else {
+        Serial.printf("[CMD] ▶ id=%d  command=%s\n", id, command.c_str());
+    }
 
     // ── Safety: Từ chối lệnh chuyển động khi đang EMERGENCY ──────
     State currentState = VehicleStateMachine::getCurrentState();
@@ -240,6 +273,10 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
             return;
         }
         applyManualCommand(command, params);
+
+        if (command == "STOP") {
+            _joystickDriveActive = false;
+        }
     }
 
     // ── Đánh dấu đã xử lý và ghi log ────────────────────────────
@@ -356,6 +393,8 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         int spd   = params["speed"] | 0;
         int angle = params["steer"] | 0;
 
+        _lastJoystickInputTime = millis();
+
         spd   = constrain(spd,   -255, 255);
         angle = constrain(angle,  -45,  45);
 
@@ -363,6 +402,8 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             // Deadzone — dừng hẳn
             MotorController::stopMotor();
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+            MotorController::setTargetSpeed(0);
+            _joystickDriveActive = false;
         } else {
             // Đặt servo lái
             int servoAngle = constrain(SERVO_STRAIGHT + angle, SERVO_LEFT_MAX, SERVO_RIGHT_MAX);
@@ -370,6 +411,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             // Điều khiển motor
             MotorController::setTargetSpeed(abs(spd));
             MotorController::moveDifferential(spd, spd);
+            _joystickDriveActive = true;
         }
 
     } else {
@@ -398,10 +440,14 @@ void CommandProcessor::setMode(OperationMode mode) {
         if (!_isHandlingWsMessage) {
             sendLog("mode_change", "switched to AUTONOMOUS");
         }
+        _joystickDriveActive = false;
     } else {
         // Dừng motor an toàn trước khi nhận lệnh thủ công
         MotorController::stopMotor();
         MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+        MotorController::setTargetSpeed(0);
+        _lastJoystickInputTime = millis();
+        _joystickDriveActive = false;
         Serial.println("[CMD] ══ Chuyển sang MANUAL ══");
         if (!_isHandlingWsMessage) {
             sendLog("mode_change", "switched to MANUAL");
