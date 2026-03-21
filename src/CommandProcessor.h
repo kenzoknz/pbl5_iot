@@ -73,6 +73,7 @@ private:
     static uint32_t      _lastPollTime;
     static uint32_t      _lastStatusTime;
     static uint32_t      _lastModePollTime;
+    static bool          _isHandlingWsMessage;
 
     // ── Core ──
     static void processCommand(const JsonObject& cmd);

@@ -54,7 +54,7 @@ void setup() {
     xTaskCreatePinnedToCore(
         vAppTask,
         "AppTask",
-        4096,                   // Stack dành cho kết nối mạng thường lớn
+        STACK_SIZE_APP,         // AppTask xử lý WS + HTTP + JSON, cần stack lớn hơn
         NULL,
         PRIORITY_APP,           // Ưu tiên cao nhất để phản hồi realtime
         &xAppTaskHandle,

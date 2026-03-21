@@ -10,6 +10,7 @@ OperationMode CommandProcessor::_mode          = AUTONOMOUS;
 uint32_t      CommandProcessor::_lastPollTime  = 0;
 uint32_t      CommandProcessor::_lastStatusTime = 0;
 uint32_t      CommandProcessor::_lastModePollTime = 0;
+bool          CommandProcessor::_isHandlingWsMessage = false;
 
 // ══════════════════════════════════════════
 //  Init
@@ -107,6 +108,12 @@ void CommandProcessor::handleWsMessage(const String& message) {
         Serial.printf("[WS] Lỗi parse message: %s\n", err.c_str());
         return;
     }
+
+    struct WsHandlerGuard {
+        explicit WsHandlerGuard(bool& f) : flag(f) { flag = true; }
+        ~WsHandlerGuard() { flag = false; }
+        bool& flag;
+    } guard(_isHandlingWsMessage);
 
     String type = doc["type"] | "";
     Serial.printf("[WS] Nhận type=%s\n", type.c_str());
@@ -388,13 +395,17 @@ void CommandProcessor::setMode(OperationMode mode) {
         Serial.println("[CMD] ══ Chuyển sang AUTONOMOUS ══");
         // [FIX] Reset trap counters khi chuyển sang AUTO để tránh trigger ESCAPE ngay lập tức
         VehicleStateMachine::resetTrapCounters();
-        sendLog("mode_change", "switched to AUTONOMOUS");
+        if (!_isHandlingWsMessage) {
+            sendLog("mode_change", "switched to AUTONOMOUS");
+        }
     } else {
         // Dừng motor an toàn trước khi nhận lệnh thủ công
         MotorController::stopMotor();
         MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
         Serial.println("[CMD] ══ Chuyển sang MANUAL ══");
-        sendLog("mode_change", "switched to MANUAL");
+        if (!_isHandlingWsMessage) {
+            sendLog("mode_change", "switched to MANUAL");
+        }
     }
 
     // Thông báo lên server qua WebSocket

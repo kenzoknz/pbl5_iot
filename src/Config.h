@@ -16,6 +16,7 @@
 #define STACK_SIZE_SENSORS 4096
 #define STACK_SIZE_LOGIC   4096
 #define STACK_SIZE_MOTOR   2048
+#define STACK_SIZE_APP     8192
 
 // // Thay đổi:
 // #define STACK_SIZE_SENSORS 3072  // Giảm từ 4096 (chỉ dùng cho frontGroup)
