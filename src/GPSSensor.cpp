@@ -1,4 +1,5 @@
 #include "GPSSensor.h"
+#include "GpsQueue.h"
 #include "Config.h"
 
 TinyGPSPlus GPSSensor::_gps;
@@ -57,6 +58,40 @@ void GPSSensor::update() {
     portENTER_CRITICAL(&_dataMux);
     _data = next;
     portEXIT_CRITICAL(&_dataMux);
+    
+    // ──────────────────────────────────────────────────
+    // THÊM LOGIC QUEUE
+    // ──────────────────────────────────────────────────
+    static uint32_t lastQueueTime = 0;
+    
+    if (next.fix && (millis() - lastQueueTime >= GPS_QUEUE_MIN_INTERVAL)) {
+        GpsQueueEntry entry;
+        entry.lat = next.lat;
+        entry.lng = next.lng;
+        entry.altitude_m = next.altitude_m;
+        entry.speed_kmh = next.speed_kmh;
+        entry.course_deg = next.course_deg;
+        entry.hdop = next.hdop;
+        entry.satellites = next.satellites;
+        entry.fix = next.fix;
+        entry.timestamp_ms = millis();
+        
+        // GPS time
+        if (_gps.date.isValid() && _gps.time.isValid()) {
+            entry.year = _gps.date.year();
+            entry.month = _gps.date.month();
+            entry.day = _gps.date.day();
+            entry.hour = _gps.time.hour();
+            entry.minute = _gps.time.minute();
+            entry.second = _gps.time.second();
+        } else {
+            entry.year = 0;
+        }
+        
+        if (GpsQueue::enqueue(entry)) {
+            lastQueueTime = millis();
+        }
+    }
 }
 
 GpsData GPSSensor::getData() {

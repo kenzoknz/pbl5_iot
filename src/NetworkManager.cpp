@@ -257,6 +257,19 @@ void NetworkManager::wsSend(const String& jsonStr) {
     }
 }
 
+void NetworkManager::wsSendSerialLog(const String& level, const String& message) {
+    StaticJsonDocument<384> doc;
+    doc["type"] = "SERIAL_LOG";
+    JsonObject data = doc.createNestedObject("data");
+    data["level"] = level;
+    data["message"] = message;
+    data["uptime"] = millis() / 1000;
+
+    String payload;
+    serializeJson(doc, payload);
+    wsSend(payload);
+}
+
 /** Static handler — WebSocketsClient yêu cầu plain function pointer */
 void NetworkManager::_onWsEvent(WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {

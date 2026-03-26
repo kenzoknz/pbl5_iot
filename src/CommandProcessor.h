@@ -17,6 +17,7 @@
 #include "UltrasonicSensor.h"
 #include "MotorController.h"
 #include "VehicleStateMachine.h"
+#include "GpsQueue.h"
 
 // ══════════════════════════════════════════
 //  Góc servo lái — chỉnh theo xe thực tế
@@ -76,6 +77,13 @@ public:
      */
     static void tickSafety();
 
+    /**
+     * Flush GPS queue khi có mạng lại.
+     * Gửi batch điểm GPS qua HTTP POST /api/gps/batch.
+     * Tự throttle — chỉ flush mỗi GPS_QUEUE_FLUSH_INTERVAL.
+     */
+    static void tickQueueFlush();
+
     static OperationMode getCurrentMode() { return _mode; }
 
 private:
@@ -86,6 +94,8 @@ private:
     static uint32_t      _lastJoystickInputTime;
     static bool          _isHandlingWsMessage;
     static bool          _joystickDriveActive;
+    static uint32_t      _lastQueueFlushTime;
+    static bool          _queueFlushInProgress;
 
     // ── Core ──
     static void processCommand(const JsonObject& cmd);

@@ -58,6 +58,7 @@ public:
     static void wsLoop();                          // Gọi liên tục trong AppTask
     static bool wsConnected();
     static void wsSend(const String& jsonStr);     // Gửi JSON string qua WS
+    static void wsSendSerialLog(const String& level, const String& message);
 
     // ── HTTP ──
     /** Trả về body string (rỗng nếu lỗi) */

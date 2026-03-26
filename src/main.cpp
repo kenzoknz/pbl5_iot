@@ -4,6 +4,7 @@
 #include "MotorController.h"
 #include "EncoderSensor.h"
 #include "GPSSensor.h"
+#include "GpsQueue.h"
 #include "VehicleStateMachine.h"
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
@@ -38,6 +39,9 @@ void setup() {
     }
     GPSSensor::begin();
     VehicleStateMachine::begin();
+    
+    // Init GPS queue
+    GpsQueue::begin();
 
     // 2. Task Xử lý Logic (State Machine) -  Core 1, 20Hz
     // Nhiệm vụ: Ra quyết định điều hướng dựa trên dữ liệu từ SensorTask
@@ -150,6 +154,9 @@ void vAppTask(void *pvParameters) {
             CommandProcessor::pollCommands();
             CommandProcessor::pollMode();  // Sync mode với database
         }
+
+        // Flush GPS queue khi mạng lại
+        CommandProcessor::tickQueueFlush();
 
         // Gửi status robot lên server qua WebSocket (throttled 5s)
         CommandProcessor::sendStatusUpdate();
