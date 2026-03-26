@@ -8,6 +8,9 @@ typedef struct {
     bool fix;
     double lat;
     double lng;
+    bool preview_available;
+    double preview_lat;
+    double preview_lng;
     float altitude_m;
     float speed_kmh;
     float course_deg;

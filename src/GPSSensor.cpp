@@ -8,6 +8,9 @@ GpsData GPSSensor::_data = {
     false,
     0.0,
     0.0,
+    false,
+    0.0,
+    0.0,
     0.0f,
     0.0f,
     0.0f,
@@ -35,6 +38,21 @@ void GPSSensor::update() {
     GpsData next = getData();
     next.updated_at_ms = millis();
     next.fix = _gps.location.isValid() && _gps.location.age() < 5000;
+
+    // Preview tọa độ để debug: có thể dùng khi đã thấy vệ tinh nhưng chưa đạt fix ổn định.
+    next.preview_available = false;
+    next.preview_lat = 0.0;
+    next.preview_lng = 0.0;
+
+    if (_gps.location.isValid()) {
+        const double rawLat = _gps.location.lat();
+        const double rawLng = _gps.location.lng();
+        if (validCoordinates(rawLat, rawLng)) {
+            next.preview_available = true;
+            next.preview_lat = rawLat;
+            next.preview_lng = rawLng;
+        }
+    }
 
     if (next.fix) {
         const double lat = _gps.location.lat();

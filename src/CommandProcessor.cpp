@@ -202,6 +202,13 @@ void CommandProcessor::sendStatusUpdate() {
         gps["lat"] = nullptr;
         gps["lng"] = nullptr;
     }
+    if (gpsData.preview_available) {
+        gps["preview_lat"] = gpsData.preview_lat;
+        gps["preview_lng"] = gpsData.preview_lng;
+    } else {
+        gps["preview_lat"] = nullptr;
+        gps["preview_lng"] = nullptr;
+    }
     gps["altitude_m"] = gpsData.altitude_m;
     gps["speed_kmh"] = gpsData.speed_kmh;
     gps["course_deg"] = gpsData.course_deg;
