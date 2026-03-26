@@ -1,6 +1,7 @@
 #include "GPSSensor.h"
 #include "GpsQueue.h"
 #include "Config.h"
+#include "NetworkManager.h"
 
 TinyGPSPlus GPSSensor::_gps;
 GpsData GPSSensor::_data = {
@@ -24,6 +25,9 @@ bool GPSSensor::begin() {
 }
 
 void GPSSensor::update() {
+    static uint32_t lastGpsInfoLogTime = 0;
+    static uint32_t lastGpsNoFixLogTime = 0;
+
     while (Serial2.available() > 0) {
         _gps.encode(Serial2.read());
     }
@@ -53,6 +57,37 @@ void GPSSensor::update() {
     if (!next.fix) {
         next.lat = 0.0;
         next.lng = 0.0;
+    }
+
+    // Gửi serial log GPS định kỳ lên server để hiển thị trên web serial monitor.
+    if (next.fix && (millis() - lastGpsInfoLogTime >= 2000)) {
+        char gpsMsg[192];
+        snprintf(
+            gpsMsg,
+            sizeof(gpsMsg),
+            "GPS FIX lat=%.6f lng=%.6f sat=%d speed=%.2fkm/h hdop=%.2f",
+            next.lat,
+            next.lng,
+            next.satellites,
+            next.speed_kmh,
+            next.hdop
+        );
+        NetworkManager::wsSendSerialLog("INFO", String(gpsMsg));
+        lastGpsInfoLogTime = millis();
+    }
+
+    if (!next.fix && (millis() - lastGpsNoFixLogTime >= 5000)) {
+        char gpsWarn[128];
+        snprintf(
+            gpsWarn,
+            sizeof(gpsWarn),
+            "GPS NO_FIX sat=%d hdop=%.2f age=%lu",
+            next.satellites,
+            next.hdop,
+            (unsigned long)_gps.location.age()
+        );
+        NetworkManager::wsSendSerialLog("WARN", String(gpsWarn));
+        lastGpsNoFixLogTime = millis();
     }
 
     portENTER_CRITICAL(&_dataMux);
