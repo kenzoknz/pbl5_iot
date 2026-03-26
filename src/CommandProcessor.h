@@ -26,7 +26,7 @@
 #define SERVO_RIGHT_MAX  125    // Độ — rẽ phải mạnh nhất
 
 // Tần suất gửi status update qua WebSocket (ms)
-#define STATUS_INTERVAL_MS  5000
+#define STATUS_INTERVAL_MS  1000
 
 // Tần suất poll mode từ HTTP (ms) - fallback khi WS ngắt
 #define MODE_POLL_INTERVAL_MS  3000

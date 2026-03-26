@@ -3,6 +3,7 @@
 #include "MPUSensor.h"
 #include "MotorController.h"
 #include "EncoderSensor.h"
+#include "GPSSensor.h"
 #include "VehicleStateMachine.h"
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
@@ -35,6 +36,7 @@ void setup() {
     } else {
         MotorController::enablePID(true);  // Bật PID khi encoder hoạt động
     }
+    GPSSensor::begin();
     VehicleStateMachine::begin();
 
     // 2. Task Xử lý Logic (State Machine) -  Core 1, 20Hz
@@ -135,6 +137,9 @@ void vAppTask(void *pvParameters) {
 
         // Tick WebSocket (xử lý ping/pong, nhận frame, gửi pending)
         NetworkManager::wsLoop();
+
+        // Tick GPS parser (Neo-7N UART2)
+        GPSSensor::update();
 
         // Tick portal cấu hình WiFi khi ESP đang ở SoftAP fallback
         NetworkManager::portalLoop();

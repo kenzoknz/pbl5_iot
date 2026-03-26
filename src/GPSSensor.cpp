@@ -1,0 +1,92 @@
+#include "GPSSensor.h"
+#include "Config.h"
+
+TinyGPSPlus GPSSensor::_gps;
+GpsData GPSSensor::_data = {
+    false,
+    0.0,
+    0.0,
+    0.0f,
+    0.0f,
+    0.0f,
+    0,
+    0.0f,
+    "",
+    0,
+};
+portMUX_TYPE GPSSensor::_dataMux = portMUX_INITIALIZER_UNLOCKED;
+
+bool GPSSensor::begin() {
+    Serial2.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+    Serial.printf("[GPS] Neo-7N init UART2 RX=%d TX=%d BAUD=%d\n", GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
+    return true;
+}
+
+void GPSSensor::update() {
+    while (Serial2.available() > 0) {
+        _gps.encode(Serial2.read());
+    }
+
+    GpsData next = getData();
+    next.updated_at_ms = millis();
+    next.fix = _gps.location.isValid() && _gps.location.age() < 5000;
+
+    if (next.fix) {
+        const double lat = _gps.location.lat();
+        const double lng = _gps.location.lng();
+        if (validCoordinates(lat, lng)) {
+            next.lat = lat;
+            next.lng = lng;
+        } else {
+            next.fix = false;
+        }
+    }
+
+    next.altitude_m = _gps.altitude.isValid() ? _gps.altitude.meters() : 0.0f;
+    next.speed_kmh = _gps.speed.isValid() ? _gps.speed.kmph() : 0.0f;
+    next.course_deg = _gps.course.isValid() ? _gps.course.deg() : 0.0f;
+    next.satellites = _gps.satellites.isValid() ? static_cast<int>(_gps.satellites.value()) : 0;
+    next.hdop = _gps.hdop.isValid() ? _gps.hdop.hdop() : 0.0f;
+    next.gps_time_utc = buildIsoTime();
+
+    if (!next.fix) {
+        next.lat = 0.0;
+        next.lng = 0.0;
+    }
+
+    portENTER_CRITICAL(&_dataMux);
+    _data = next;
+    portEXIT_CRITICAL(&_dataMux);
+}
+
+GpsData GPSSensor::getData() {
+    GpsData copy;
+    portENTER_CRITICAL(&_dataMux);
+    copy = _data;
+    portEXIT_CRITICAL(&_dataMux);
+    return copy;
+}
+
+String GPSSensor::buildIsoTime() {
+    if (!_gps.date.isValid() || !_gps.time.isValid()) {
+        return "";
+    }
+
+    char buf[32];
+    snprintf(
+        buf,
+        sizeof(buf),
+        "%04d-%02d-%02dT%02d:%02d:%02dZ",
+        _gps.date.year(),
+        _gps.date.month(),
+        _gps.date.day(),
+        _gps.time.hour(),
+        _gps.time.minute(),
+        _gps.time.second()
+    );
+    return String(buf);
+}
+
+bool GPSSensor::validCoordinates(double lat, double lng) {
+    return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
+}

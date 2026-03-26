@@ -63,6 +63,11 @@
 #define ENCODER_CPR    2400       // Counts Per Revolution (x4 quadrature)
 #define ENCODER_SAMPLE_MS 20     // Chu kỳ đọc encoder (50Hz)
 
+/* ================== GPS NEO-7N (UART2) ================== */
+#define GPS_RX_PIN 27
+#define GPS_TX_PIN 5
+#define GPS_BAUD   9600
+
 // ── Thông số cơ học bánh xe ──
 #define WHEEL_DIAMETER_CM  6.5    // Đường kính bánh xe (cm) — đo thực tế!
 #define WHEEL_CIRCUMFERENCE_CM (WHEEL_DIAMETER_CM * 3.14159)  // ≈ 20.42 cm

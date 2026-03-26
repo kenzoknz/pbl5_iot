@@ -4,6 +4,7 @@
  */
 
 #include "CommandProcessor.h"
+#include "GPSSensor.h"
 
 // ── Static member definitions ──────────────────────────────────
 OperationMode CommandProcessor::_mode          = AUTONOMOUS;
@@ -181,13 +182,34 @@ void CommandProcessor::sendStatusUpdate() {
     if (millis() - _lastStatusTime < STATUS_INTERVAL_MS) return;
     _lastStatusTime = millis();
 
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<640> doc;
     doc["type"] = "STATUS";
     JsonObject data = doc.createNestedObject("data");
     data["mode"]    = (_mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
     data["state"]   = (int)VehicleStateMachine::getCurrentState();
     data["rssi"]    = WiFi.RSSI();
     data["uptime"]  = millis() / 1000;
+
+    GpsData gpsData = GPSSensor::getData();
+    JsonObject gps = data.createNestedObject("gps");
+    gps["fix"] = gpsData.fix;
+    if (gpsData.fix) {
+        gps["lat"] = gpsData.lat;
+        gps["lng"] = gpsData.lng;
+    } else {
+        gps["lat"] = nullptr;
+        gps["lng"] = nullptr;
+    }
+    gps["altitude_m"] = gpsData.altitude_m;
+    gps["speed_kmh"] = gpsData.speed_kmh;
+    gps["course_deg"] = gpsData.course_deg;
+    gps["satellites"] = gpsData.satellites;
+    gps["hdop"] = gpsData.hdop;
+    if (gpsData.gps_time_utc.length() > 0) {
+        gps["gps_time_utc"] = gpsData.gps_time_utc;
+    } else {
+        gps["gps_time_utc"] = nullptr;
+    }
 
     String msg;
     serializeJson(doc, msg);
