@@ -257,6 +257,19 @@ void NetworkManager::wsSend(const String& jsonStr) {
     }
 }
 
+void NetworkManager::wsSendSerialLog(const String& level, const String& message) {
+    StaticJsonDocument<384> doc;
+    doc["type"] = "SERIAL_LOG";
+    JsonObject data = doc.createNestedObject("data");
+    data["level"] = level;
+    data["message"] = message;
+    data["uptime"] = millis() / 1000;
+
+    String payload;
+    serializeJson(doc, payload);
+    wsSend(payload);
+}
+
 /** Static handler — WebSocketsClient yêu cầu plain function pointer */
 void NetworkManager::_onWsEvent(WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {
@@ -277,6 +290,16 @@ void NetworkManager::_onWsEvent(WStype_t type, uint8_t* payload, size_t length) 
                 String msg;
                 serializeJson(reg, msg);
                 _ws.sendTXT(msg);
+
+                // Gửi 1 log xác nhận pipeline serial monitor đang hoạt động
+                StaticJsonDocument<256> serialDoc;
+                serialDoc["type"] = "SERIAL_LOG";
+                serialDoc["data"]["level"] = "INFO";
+                serialDoc["data"]["message"] = "WS connected: serial bridge ready";
+                serialDoc["data"]["uptime"] = millis() / 1000;
+                String serialMsg;
+                serializeJson(serialDoc, serialMsg);
+                _ws.sendTXT(serialMsg);
             }
             break;
 

@@ -4,6 +4,7 @@
  */
 
 #include "CommandProcessor.h"
+#include "GPSSensor.h"
 
 // ── Static member definitions ──────────────────────────────────
 OperationMode CommandProcessor::_mode          = AUTONOMOUS;
@@ -13,6 +14,8 @@ uint32_t      CommandProcessor::_lastModePollTime = 0;
 uint32_t      CommandProcessor::_lastJoystickInputTime = 0;
 bool          CommandProcessor::_isHandlingWsMessage = false;
 bool          CommandProcessor::_joystickDriveActive = false;
+uint32_t      CommandProcessor::_lastQueueFlushTime = 0;
+bool          CommandProcessor::_queueFlushInProgress = false;
 
 // ══════════════════════════════════════════
 //  Init
@@ -181,13 +184,41 @@ void CommandProcessor::sendStatusUpdate() {
     if (millis() - _lastStatusTime < STATUS_INTERVAL_MS) return;
     _lastStatusTime = millis();
 
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<640> doc;
     doc["type"] = "STATUS";
     JsonObject data = doc.createNestedObject("data");
     data["mode"]    = (_mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
     data["state"]   = (int)VehicleStateMachine::getCurrentState();
     data["rssi"]    = WiFi.RSSI();
     data["uptime"]  = millis() / 1000;
+
+    GpsData gpsData = GPSSensor::getData();
+    JsonObject gps = data.createNestedObject("gps");
+    gps["fix"] = gpsData.fix;
+    if (gpsData.fix) {
+        gps["lat"] = gpsData.lat;
+        gps["lng"] = gpsData.lng;
+    } else {
+        gps["lat"] = nullptr;
+        gps["lng"] = nullptr;
+    }
+    if (gpsData.preview_available) {
+        gps["preview_lat"] = gpsData.preview_lat;
+        gps["preview_lng"] = gpsData.preview_lng;
+    } else {
+        gps["preview_lat"] = nullptr;
+        gps["preview_lng"] = nullptr;
+    }
+    gps["altitude_m"] = gpsData.altitude_m;
+    gps["speed_kmh"] = gpsData.speed_kmh;
+    gps["course_deg"] = gpsData.course_deg;
+    gps["satellites"] = gpsData.satellites;
+    gps["hdop"] = gpsData.hdop;
+    if (gpsData.gps_time_utc.length() > 0) {
+        gps["gps_time_utc"] = gpsData.gps_time_utc;
+    } else {
+        gps["gps_time_utc"] = nullptr;
+    }
 
     String msg;
     serializeJson(doc, msg);
@@ -482,6 +513,8 @@ void CommandProcessor::markExecuted(int id) {
 }
 
 void CommandProcessor::sendLog(const String& event, const String& message) {
+    NetworkManager::wsSendSerialLog("INFO", event + ": " + message);
+
     StaticJsonDocument<256> doc;
     doc["event"]   = event;
     doc["message"] = message;
@@ -491,5 +524,72 @@ void CommandProcessor::sendLog(const String& event, const String& message) {
     int code = NetworkManager::httpPost("/api/logs", body);
     if (code != 201) {
         Serial.printf("[CMD] sendLog thất bại event=%s code=%d\n", event.c_str(), code);
+    }
+}
+
+void CommandProcessor::tickQueueFlush() {
+    // Chỉ flush khi WS connected (có mạng)
+    if (!NetworkManager::wsConnected()) return;
+    
+    // Chỉ xử lý 1 batch / 500ms để không quá tải
+    if (millis() - _lastQueueFlushTime < GPS_QUEUE_FLUSH_INTERVAL) return;
+    _lastQueueFlushTime = millis();
+    
+    if (_queueFlushInProgress) return; // Chờ batch trước xong
+    
+    uint16_t queueSize = GpsQueue::size();
+    if (queueSize == 0) return;
+    
+    // Lấy batch
+    const uint8_t BATCH_SIZE = GPS_QUEUE_BATCH_SIZE;
+    GpsQueueEntry batch[BATCH_SIZE];
+    uint8_t batchCount = 0;
+    
+    for (uint8_t i = 0; i < BATCH_SIZE && GpsQueue::size() > 0; i++) {
+        if (GpsQueue::dequeue(batch[i])) {
+            batchCount++;
+        }
+    }
+    
+    if (batchCount == 0) return;
+    
+    _queueFlushInProgress = true;
+    Serial.printf("[CMD] Flushing %d GPS points from queue...\n", batchCount);
+    
+    // Tạo JSON array
+    StaticJsonDocument<2048> doc;
+    JsonArray gpsArray = doc.createNestedArray("gps_log");
+    
+    for (uint8_t i = 0; i < batchCount; i++) {
+        JsonObject obj = gpsArray.createNestedObject();
+        obj["lat"] = batch[i].lat;
+        obj["lng"] = batch[i].lng;
+        obj["altitude_m"] = batch[i].altitude_m;
+        obj["speed_kmh"] = batch[i].speed_kmh;
+        obj["course_deg"] = batch[i].course_deg;
+        obj["satellites"] = batch[i].satellites;
+        obj["hdop"] = batch[i].hdop;
+        obj["fix"] = batch[i].fix;
+        
+        // ISO time from GPS
+        char timeStr[32];
+        snprintf(timeStr, sizeof(timeStr), 
+                 "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                 batch[i].year, batch[i].month, batch[i].day,
+                 batch[i].hour, batch[i].minute, batch[i].second);
+        obj["gps_time_utc"] = timeStr;
+    }
+    
+    String body;
+    serializeJson(doc, body);
+    
+    // POST
+    int code = NetworkManager::httpPost("/api/gps/batch", body);
+    _queueFlushInProgress = false;
+    
+    if (code == 201 || code == 200) {
+        Serial.printf("[CMD] ✓ Queue flush OK (sent %d points)\n", batchCount);
+    } else {
+        Serial.printf("[CMD] ✗ Queue flush failed code=%d, points discarded\n", code);
     }
 }
