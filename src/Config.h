@@ -16,6 +16,7 @@
 #define STACK_SIZE_SENSORS 4096
 #define STACK_SIZE_LOGIC   4096
 #define STACK_SIZE_MOTOR   2048
+#define STACK_SIZE_APP     8192
 
 // // Thay đổi:
 // #define STACK_SIZE_SENSORS 3072  // Giảm từ 4096 (chỉ dùng cho frontGroup)
@@ -61,6 +62,17 @@
 #define ENCODER_PPR    600        // Pulses Per Revolution (1 kênh)
 #define ENCODER_CPR    2400       // Counts Per Revolution (x4 quadrature)
 #define ENCODER_SAMPLE_MS 20     // Chu kỳ đọc encoder (50Hz)
+
+/* ================== GPS NEO-7N (UART2) ================== */
+#define GPS_RX_PIN 27
+#define GPS_TX_PIN 5
+#define GPS_BAUD   9600
+
+/* ================== GPS QUEUE (Buffer mạng mất) ================== */
+#define GPS_QUEUE_CAPACITY       256              // max entries (~12 KB)
+#define GPS_QUEUE_MIN_INTERVAL   2000             // ms between queue entries
+#define GPS_QUEUE_BATCH_SIZE     8                // entries per flush
+#define GPS_QUEUE_FLUSH_INTERVAL 500              // ms between flushes
 
 // ── Thông số cơ học bánh xe ──
 #define WHEEL_DIAMETER_CM  6.5    // Đường kính bánh xe (cm) — đo thực tế!

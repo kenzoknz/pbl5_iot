@@ -37,6 +37,7 @@ private:
     static TaskHandle_t frontGroupTaskHandle;
     static TaskHandle_t backTaskHandle;
     static OperationMode currentMode;
+    static volatile bool tasksEnabled;  // Cờ để enable/disable sensor reading an toàn
 
     // FreeRTOS Tasks — chạy trên Core 0
     static void frontGroupSensorTask(void *pvParameters);
