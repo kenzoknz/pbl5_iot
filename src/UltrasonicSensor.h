@@ -53,10 +53,6 @@ private:
     static long applyAdaptiveFilter(long rawDist, long *buffer, int &index, float &emaValue);
 };
 
-// ── [+] MỚI: Mutex khai báo extern — định nghĩa 1 lần trong .cpp ─────────────
-//    V3 gốc khai báo global không có extern → multiple definition khi include
-//    nhiều file. Sửa bằng cách khai báo extern ở .h, định nghĩa ở .cpp.
-// 2 Mutex: front group + back (không cần 4)
 extern SemaphoreHandle_t frontGroupMutex;
 extern SemaphoreHandle_t backMutex;
 

@@ -108,45 +108,6 @@ OperationMode UltrasonicSensor::getMode() {
     return currentMode;
 }
 
-// // ================== SENSOR TASKS ==================
-// // Stagger: mỗi task delay khởi đầu khác nhau để tránh trigger đồng thời
-// // Front: 0ms, Right: 15ms, Left: 30ms, Back: 45ms → tổng chu kỳ 60ms
-// void UltrasonicSensor::frontSensorTask(void *pvParameters) {
-//     const TickType_t period = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
-//     vTaskDelay(pdMS_TO_TICKS(0)); // Stagger offset
-//     for (;;) {
-//         updateFrontBuffer();
-//         vTaskDelay(period);
-//     }
-// }
-
-// void UltrasonicSensor::rightSensorTask(void *pvParameters) {
-//     const TickType_t period = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
-//     vTaskDelay(pdMS_TO_TICKS(15)); // Stagger 15ms
-//     for (;;) {
-//         updateRightBuffer();
-//         vTaskDelay(period);
-//     }
-// }
-
-// void UltrasonicSensor::leftSensorTask(void *pvParameters) {
-//     const TickType_t period = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
-//     vTaskDelay(pdMS_TO_TICKS(30)); // Stagger 30ms
-//     for (;;) {
-//         updateLeftBuffer();
-//         vTaskDelay(period);
-//     }
-// }
-
-// void UltrasonicSensor::backSensorTask(void *pvParameters) {
-//     const TickType_t period = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
-//     vTaskDelay(pdMS_TO_TICKS(45)); // Stagger 45ms
-//     for (;;) {
-//         updateBackBuffer();
-//         vTaskDelay(period);
-//     }
-// }
-
 // ================= RAW READ ===========================
 long UltrasonicSensor::readDistanceRaw(int trig, int echo) {
     digitalWrite(trig, LOW);
@@ -161,71 +122,6 @@ long UltrasonicSensor::readDistanceRaw(int trig, int echo) {
     long dist = duration * 0.034 / 2;
     return (dist < 2 || dist > 400) ? 999 : dist;
 }
-
-// // ================== BUFFER UPDATES ==================
-// void UltrasonicSensor::updateFrontBuffer() {
-//     if (millis() - lastFrontTrigger < US_UPDATE_RATE_MS) return;
-//     lastFrontTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][FRONT] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     frontBuffer[frontIndex] = dist;
-//     frontIndex = (frontIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
-
-// void UltrasonicSensor::updateRightBuffer() {
-//     if (millis() - lastRightTrigger < US_UPDATE_RATE_MS) return;
-//     lastRightTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_RIGHT, ECHO_RIGHT);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][RIGHT] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     rightBuffer[rightIndex] = dist;
-//     rightIndex = (rightIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
-
-// void UltrasonicSensor::updateLeftBuffer() {
-//     if (millis() - lastLeftTrigger < US_UPDATE_RATE_MS) return;
-//     lastLeftTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_LEFT, ECHO_LEFT);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][LEFT] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     leftBuffer[leftIndex] = dist;
-//     leftIndex = (leftIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
-
-// void UltrasonicSensor::updateBackBuffer() {
-//     if (millis() - lastBackTrigger < US_UPDATE_RATE_MS) return;
-//     lastBackTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_BACK, ECHO_BACK);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][BACK] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     backBuffer[backIndex] = dist;
-//     backIndex = (backIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
 
 // ================= MEDIAN FILTER ======================
 long UltrasonicSensor::getMedian(long *buffer) {

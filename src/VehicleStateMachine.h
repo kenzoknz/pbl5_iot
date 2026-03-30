@@ -17,7 +17,7 @@ private:
     static unsigned long lastDebugTime; 
     static bool turnRight;  // Hướng rẽ cuối cùng được chọn
 
-    // ══════ [MỚI] Anti-Trap Counters ══════
+    // ══════  Anti-Trap Counters ══════
     static int   oscillationCount;       // Đếm số lần đổi hướng liên tiếp (LEFT↔RIGHT)
     static int   backingCount;           // Đếm số lần BACKING liên tục
     static State lastTurnDirection;      // Hướng rẽ trước đó (TURN_LEFT / TURN_RIGHT)

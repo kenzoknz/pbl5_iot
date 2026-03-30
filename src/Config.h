@@ -76,29 +76,30 @@
 #define PWM_RESOLUTION 8
 
 /* ================== SPEED ================== */
+
 #define STOP_SPEED 0
-#define MIN_RUN_SPEED 150 // Tốc độ tối thiểu để thắng lực ma sát 190
-#define CRUISE_SPEED 70 // 3 tầng: 111, test 2 tầng 70
-#define FAST_SPEED 90 //3 tâng 250
-#define BACK_SPEED 170 // 3 tầng 220, 2 tầng cũ 150, test 170
-#define ESCAPE_SPEED 200        // [MỚI] Tốc độ xoay thoát bẫy
+#define MIN_RUN_SPEED 140 // Tốc độ tối thiểu để thắng lực ma sát 190
+#define CRUISE_SPEED 60 // 3 tầng: 111, test 2 tầng 70
+#define FAST_SPEED 80 //3 tâng 250
+#define BACK_SPEED 160 // 3 tầng 220, 2 tầng cũ 150, test 170
+#define ESCAPE_SPEED 190       // [MỚI] Tốc độ xoay thoát bẫy
 // Cần đủ cao để thắng ma sát khi xoay tại chỗ — đo thực tế
 
-#define SHARP_TURN_BOOST 220   // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát
-#define MEDIUM_TURN_BOOST 180  // Cua vừa (góc 60-80°) - Tăng tốc để thắng ma sát
-#define TURN_BOOST 160       // Cua vừa (góc 60-80°) 200
-#define LIGHT_TURN_BOOST 145   // Cua nhẹ (góc 15-60°) - Tăng tốc nhẹ để thắng ma sát
+#define SHARP_TURN_BOOST 210   // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát
+#define MEDIUM_TURN_BOOST 190  // Cua vừa (góc 60-80°) - Tăng tốc để thắng ma sát
+#define TURN_BOOST 150       // Cua vừa (góc 60-80°) 200
+#define LIGHT_TURN_BOOST 135   // Cua nhẹ (góc 15-60°) - Tăng tốc nhẹ để thắng ma sát
 
 //  3 tầng (thêm 1 tầng giảm ~10-15%)
 
 /* ================== DISTANCE THRESHOLDS================== */
-#define EMERGENCY_DIST    35    // Dừng khẩn cấp
-#define STOP_DISTANCE     40
-#define SLOW_DISTANCE     50    // Giảm tốc dần
-#define TURN_DISTANCE     65    // Qđ rẽ
-#define PREPARE_DISTANCE  70
-#define SIDE_DANGER_DIST  45    // Ngưỡng nguy hiểm cho cảm biến bên
-#define BACK_DANGER_DISTANCE 45
+#define EMERGENCY_DIST    40    // Dừng khẩn cấp
+#define STOP_DISTANCE     45
+#define SLOW_DISTANCE     55    // Giảm tốc dần
+#define TURN_DISTANCE     70    // Qđ rẽ
+#define PREPARE_DISTANCE  75
+#define SIDE_DANGER_DIST  50    // Ngưỡng nguy hiểm cho cảm biến bên
+#define BACK_DANGER_DISTANCE 50
 // [MỚI] Ngưỡng so sánh hướng — chênh lệch tối thiểu để ưu tiên 1 bên
 #define DIRECTION_HYSTERESIS 8  // cm — tránh dao động khi Left ≈ Right
 // Chỉnh DIRECTION_HYSTERESIS (hiện 8cm): Nếu robot vẫn dao động LEFT↔RIGHT → tăng lên 12-15cm
