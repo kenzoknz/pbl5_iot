@@ -23,6 +23,12 @@
 // // Thêm:
 // #define STACK_SIZE_BACK_SENSOR 2048  // Riêng cho back sensor
 
+
+/* ================== MICRO-ROS (UART) ================== */
+// [MỚI] Chân giao tiếp Serial1 cho ROS 2
+#define ROS_RX_PIN 39   // VN (Input only - an toàn cho RX)
+#define ROS_TX_PIN 15   // MTDO (Strapping pin - an toàn cho TX)
+
 /* ================== MPU6050 ================== */
 #define SDA_PIN 32
 #define SCL_PIN 33

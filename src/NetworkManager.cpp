@@ -49,7 +49,7 @@ void NetworkManager::_saveWiFiCredentials(const String& ssid, const String& pass
 
 bool NetworkManager::setWiFiCredentials(const String& ssid, const String& pass, bool reconnectNow) {
     if (ssid.isEmpty()) {
-        Serial.println("[NET] SET_WIFI rejected: ssid rỗng");
+        // Serial.println("[NET] SET_WIFI rejected: ssid rỗng");
         return false;
     }
 
@@ -58,11 +58,11 @@ bool NetworkManager::setWiFiCredentials(const String& ssid, const String& pass, 
     _wifiLoaded = true;
     _saveWiFiCredentials(ssid, pass);
 
-    Serial.printf("[NET] Đã lưu WiFi mới: %s\n", _wifiSsid.c_str());
+    // Serial.printf("[NET] Đã lưu WiFi mới: %s\n", _wifiSsid.c_str());
     _failedReconnects = 0;
 
     if (reconnectNow) {
-        Serial.println("[NET] Reconnect WiFi với credentials mới...");
+        // Serial.println("[NET] Reconnect WiFi với credentials mới...");
         _stopProvisionPortal();
         WiFi.disconnect(true);
         vTaskDelay(pdMS_TO_TICKS(250));
@@ -83,7 +83,7 @@ void NetworkManager::_startProvisionPortal() {
     WiFi.mode(WIFI_AP_STA);
     const bool apOk = WiFi.softAP("KaliVega-Setup", "12345678");
     if (!apOk) {
-        Serial.println("[AP] Không thể khởi động SoftAP");
+        // Serial.println("[AP] Không thể khởi động SoftAP");
         return;
     }
 
@@ -123,7 +123,7 @@ void NetworkManager::_startProvisionPortal() {
     gPortalServer.begin();
     _provisioningMode = true;
     _portalReconnectPending = false;
-    Serial.printf("[AP] SoftAP ready: SSID=KaliVega-Setup IP=%s\n", WiFi.softAPIP().toString().c_str());
+    // Serial.printf("[AP] SoftAP ready: SSID=KaliVega-Setup IP=%s\n", WiFi.softAPIP().toString().c_str());
 }
 
 void NetworkManager::_stopProvisionPortal() {
@@ -133,7 +133,7 @@ void NetworkManager::_stopProvisionPortal() {
     WiFi.softAPdisconnect(true);
     _provisioningMode = false;
     _portalReconnectPending = false;
-    Serial.println("[AP] SoftAP stopped");
+    // Serial.println("[AP] SoftAP stopped");
 }
 
 void NetworkManager::portalLoop() {
@@ -162,30 +162,29 @@ bool NetworkManager::initWiFi() {
     _loadWiFiCredentials();
 
     if (_wifiSsid.isEmpty()) {
-        Serial.println("[NET] Không có SSID để kết nối");
+        // Serial.println("[NET] Không có SSID để kết nối");
         return false;
     }
 
-    Serial.printf("[NET] Kết nối WiFi: %s\n", _wifiSsid.c_str());
+    // Serial.printf("[NET] Kết nối WiFi: %s\n", _wifiSsid.c_str());
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifiSsid.c_str(), _wifiPass.c_str());
 
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
         vTaskDelay(pdMS_TO_TICKS(500));
-        Serial.print(".");
+        // Serial.print(".");
     }
 
     if (WiFi.status() == WL_CONNECTED) {
         _backoffMs = 1000;  // Reset backoff khi thành công
         _failedReconnects = 0;
         _stopProvisionPortal();
-        Serial.printf("\n[NET] WiFi OK  IP: %s  RSSI: %d dBm\n",
-                      WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        // Serial.printf("\n[NET] WiFi OK  IP: %s  RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
         return true;
     }
 
-    Serial.println("\n[NET] WiFi FAILED!");
+    // Serial.println("\n[NET] WiFi FAILED!");
     _failedReconnects++;
     _startProvisionPortal();
     return false;
@@ -209,13 +208,13 @@ void NetworkManager::reconnectIfNeeded() {
     if (now - _lastReconnectAttempt < _backoffMs) return;
 
     _lastReconnectAttempt = now;
-    Serial.printf("[NET] WiFi mất kết nối — thử lại (backoff=%u ms)...\n", _backoffMs);
+    // Serial.printf("[NET] WiFi mất kết nối — thử lại (backoff=%u ms)...\n", _backoffMs);
     _loadWiFiCredentials();
     WiFi.disconnect();
     WiFi.begin(_wifiSsid.c_str(), _wifiPass.c_str());
     _failedReconnects = min<uint8_t>(_failedReconnects + 1, 250);
     if (_failedReconnects >= RECONNECT_FAILS_BEFORE_AP) {
-        Serial.println("[NET] Reconnect thất bại nhiều lần — chuyển sang SoftAP provisioning");
+        // Serial.println("[NET] Reconnect thất bại nhiều lần — chuyển sang SoftAP provisioning");
         _startProvisionPortal();
         return;
     }
@@ -236,7 +235,7 @@ void NetworkManager::initWebSocket(WsMessageCb callback) {
     _ws.setReconnectInterval(5000);            // Tự reconnect sau 5s
     _ws.enableHeartbeat(15000, 3000, 2);       // ping 15s, pong timeout 3s, retry 2
 
-    Serial.printf("[WS] Khởi tạo: ws://%s:%d%s\n", SERVER_HOST, SERVER_PORT, WS_PATH);
+    // Serial.printf("[WS] Khởi tạo: ws://%s:%d%s\n", SERVER_HOST, SERVER_PORT, WS_PATH);
 }
 
 void NetworkManager::wsLoop() {
@@ -251,9 +250,9 @@ void NetworkManager::wsSend(const String& jsonStr) {
     if (_wsConnected) {
         String payload = jsonStr;
         _ws.sendTXT(payload);
-        Serial.printf("[WS] Sent: %s\n", jsonStr.c_str());
+        // Serial.printf("[WS] Sent: %s\n", jsonStr.c_str());
     } else {
-        Serial.println("[WS] Skip send — chưa kết nối");
+        // Serial.println("[WS] Skip send — chưa kết nối");
     }
 }
 
@@ -275,12 +274,12 @@ void NetworkManager::_onWsEvent(WStype_t type, uint8_t* payload, size_t length) 
     switch (type) {
         case WStype_DISCONNECTED:
             _wsConnected = false;
-            Serial.println("[WS] Ngắt kết nối");
+            // Serial.println("[WS] Ngắt kết nối");
             break;
 
         case WStype_CONNECTED:
             _wsConnected = true;
-            Serial.printf("[WS] Kết nối thành công: %s\n", (char*)payload);
+            // Serial.printf("[WS] Kết nối thành công: %s\n", (char*)payload);
             {
                 // Gửi thông điệp đăng ký ngay khi kết nối
                 StaticJsonDocument<128> reg;
@@ -310,19 +309,19 @@ void NetworkManager::_onWsEvent(WStype_t type, uint8_t* payload, size_t length) 
             break;
 
         case WStype_BIN:
-            Serial.printf("[WS] Binary %u bytes (bỏ qua)\n", length);
+            // Serial.printf("[WS] Binary %u bytes (bỏ qua)\n", length);
             break;
 
         case WStype_PING:
-            Serial.println("[WS] Ping nhận được");
+            // Serial.println("[WS] Ping nhận được");
             break;
 
         case WStype_PONG:
-            Serial.println("[WS] Pong nhận được");
+            // Serial.println("[WS] Pong nhận được");
             break;
 
         case WStype_ERROR:
-            Serial.printf("[WS] Lỗi: %s\n", (char*)payload);
+            // Serial.printf("[WS] Lỗi: %s\n", (char*)payload);
             break;
 
         default:
@@ -348,7 +347,7 @@ void NetworkManager::_addHeaders(HTTPClient& client) {
 
 String NetworkManager::httpGet(const String& path) {
     if (!isWiFiConnected()) {
-        Serial.println("[HTTP] GET skip — WiFi disconnected");
+        // Serial.println("[HTTP] GET skip — WiFi disconnected");
         return "";
     }
 
@@ -363,10 +362,9 @@ String NetworkManager::httpGet(const String& path) {
     if (code == HTTP_CODE_OK) {
         response = http.getString();
     } else if (code > 0) {
-        Serial.printf("[HTTP] GET %s → %d\n", path.c_str(), code);
+        // Serial.printf("[HTTP] GET %s → %d\n", path.c_str(), code);
     } else {
-        Serial.printf("[HTTP] GET %s → Lỗi: %s\n",
-                      path.c_str(), http.errorToString(code).c_str());
+        // Serial.printf("[HTTP] GET %s → Lỗi: %s\n", path.c_str(), http.errorToString(code).c_str());
     }
 
     http.end();
@@ -375,7 +373,7 @@ String NetworkManager::httpGet(const String& path) {
 
 int NetworkManager::httpPost(const String& path, const String& jsonBody) {
     if (!isWiFiConnected()) {
-        Serial.println("[HTTP] POST skip — WiFi disconnected");
+        // Serial.println("[HTTP] POST skip — WiFi disconnected");
         return -1;
     }
 
@@ -386,10 +384,9 @@ int NetworkManager::httpPost(const String& path, const String& jsonBody) {
 
     int code = http.POST(jsonBody);
     if (code < 0) {
-        Serial.printf("[HTTP] POST %s → Lỗi: %s\n",
-                      path.c_str(), http.errorToString(code).c_str());
+        // Serial.printf("[HTTP] POST %s → Lỗi: %s\n", path.c_str(), http.errorToString(code).c_str());
     } else {
-        Serial.printf("[HTTP] POST %s → %d\n", path.c_str(), code);
+        // Serial.printf("[HTTP] POST %s → %d\n", path.c_str(), code);
     }
 
     http.end();
@@ -398,7 +395,7 @@ int NetworkManager::httpPost(const String& path, const String& jsonBody) {
 
 int NetworkManager::httpPut(const String& path, const String& jsonBody) {
     if (!isWiFiConnected()) {
-        Serial.println("[HTTP] PUT skip — WiFi disconnected");
+        // Serial.println("[HTTP] PUT skip — WiFi disconnected");
         return -1;
     }
 
@@ -409,10 +406,9 @@ int NetworkManager::httpPut(const String& path, const String& jsonBody) {
 
     int code = http.PUT(jsonBody);
     if (code < 0) {
-        Serial.printf("[HTTP] PUT %s → Lỗi: %s\n",
-                      path.c_str(), http.errorToString(code).c_str());
+        // Serial.printf("[HTTP] PUT %s → Lỗi: %s\n", path.c_str(), http.errorToString(code).c_str());
     } else {
-        Serial.printf("[HTTP] PUT %s → %d\n", path.c_str(), code);
+        // Serial.printf("[HTTP] PUT %s → %d\n", path.c_str(), code);
     }
 
     http.end();

@@ -26,7 +26,7 @@ void CommandProcessor::begin() {
     _joystickDriveActive = false;
     _lastJoystickInputTime = millis();
     UltrasonicSensor::setMode(AUTONOMOUS);
-    Serial.println("[CMD] Khởi động — Chế độ: AUTONOMOUS");
+    // Serial.println("[CMD] Khởi động — Chế độ: AUTONOMOUS");
     sendLog("system_start", "ESP32 online. Mode: AUTONOMOUS");
 }
 
@@ -39,7 +39,7 @@ void CommandProcessor::tickSafety() {
         MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
         MotorController::setTargetSpeed(0);
         _joystickDriveActive = false;
-        Serial.println("[CMD] Joystick timeout -> STOP for safety");
+        // Serial.println("[CMD] Joystick timeout -> STOP for safety");
     }
 }
 
@@ -52,7 +52,7 @@ void CommandProcessor::pollCommands() {
     if (millis() - _lastPollTime < interval) return;
     _lastPollTime = millis();
 
-    Serial.println("[CMD] Polling HTTP /api/commands/pending/all ...");
+    // Serial.println("[CMD] Polling HTTP /api/commands/pending/all ...");
     String response = NetworkManager::httpGet("/api/commands/pending/all");
     if (response.isEmpty()) return;
 
@@ -60,17 +60,17 @@ void CommandProcessor::pollCommands() {
     DynamicJsonDocument doc(4096);
     DeserializationError err = deserializeJson(doc, response);
     if (err) {
-        Serial.printf("[CMD] Lỗi JSON: %s\n", err.c_str());
+        // Serial.printf("[CMD] Lỗi JSON: %s\n", err.c_str());
         return;
     }
 
     if (!doc["success"].as<bool>()) {
-        Serial.println("[CMD] Server trả về success=false");
+        // Serial.println("[CMD] Server trả về success=false");
         return;
     }
 
     JsonArray data = doc["data"].as<JsonArray>();
-    Serial.printf("[CMD] Nhận được %u lệnh pending\n", data.size());
+    // Serial.printf("[CMD] Nhận được %u lệnh pending\n", data.size());
 
     for (JsonObject cmd : data) {
         processCommand(cmd);
@@ -85,7 +85,7 @@ void CommandProcessor::pollMode() {
     if (millis() - _lastModePollTime < MODE_POLL_INTERVAL_MS) return;
     _lastModePollTime = millis();
 
-    Serial.println("[CMD] Polling HTTP /api/robot/mode ...");
+    // Serial.println("[CMD] Polling HTTP /api/robot/mode ...");
     String response = NetworkManager::httpGet("/api/robot/mode");
     if (response.isEmpty()) return;
 
@@ -93,26 +93,26 @@ void CommandProcessor::pollMode() {
     StaticJsonDocument<512> doc;
     DeserializationError err = deserializeJson(doc, response);
     if (err) {
-        Serial.printf("[CMD] Lỗi JSON mode poll: %s\n", err.c_str());
+        // Serial.printf("[CMD] Lỗi JSON mode poll: %s\n", err.c_str());
         return;
     }
 
     if (!doc["success"].as<bool>()) {
-        Serial.println("[CMD] Mode poll: server trả về success=false");
+        // Serial.println("[CMD] Mode poll: server trả về success=false");
         return;
     }
 
     String modeStr = doc["data"]["mode"] | "";
-    Serial.printf("[CMD] Mode poll: server mode = %s, current mode = %s\n", 
-                  modeStr.c_str(), 
-                  (_mode == AUTONOMOUS ? "AUTONOMOUS" : "MANUAL"));
+    // Serial.printf("[CMD] Mode poll: server mode = %s, current mode = %s\n", 
+                //   modeStr.c_str(), 
+                //   (_mode == AUTONOMOUS ? "AUTONOMOUS" : "MANUAL"));
 
     // Sync mode nếu khác
     if (modeStr == "AUTONOMOUS" && _mode != AUTONOMOUS) {
-        Serial.println("[CMD] 🔄 Mode sync: AUTONOMOUS (từ DB)");
+        // Serial.println("[CMD] 🔄 Mode sync: AUTONOMOUS (từ DB)");
         setMode(AUTONOMOUS);
     } else if (modeStr == "MANUAL" && _mode != MANUAL) {
-        Serial.println("[CMD] 🔄 Mode sync: MANUAL (từ DB)");
+        // Serial.println("[CMD] 🔄 Mode sync: MANUAL (từ DB)");
         setMode(MANUAL);
     }
 }
@@ -125,7 +125,7 @@ void CommandProcessor::handleWsMessage(const String& message) {
     StaticJsonDocument<1024> doc;
     DeserializationError err = deserializeJson(doc, message);
     if (err) {
-        Serial.printf("[WS] Lỗi parse message: %s\n", err.c_str());
+        // Serial.printf("[WS] Lỗi parse message: %s\n", err.c_str());
         return;
     }
 
@@ -136,7 +136,7 @@ void CommandProcessor::handleWsMessage(const String& message) {
     } guard(_isHandlingWsMessage);
 
     String type = doc["type"] | "";
-    Serial.printf("[WS] Nhận type=%s\n", type.c_str());
+    // Serial.printf("[WS] Nhận type=%s\n", type.c_str());
 
     if (type == "COMMAND") {
         // Server push lệnh trực tiếp. Hỗ trợ cả 2 dạng:
@@ -158,21 +158,20 @@ void CommandProcessor::handleWsMessage(const String& message) {
     } else if (type == "MODE_CHANGE") {
         // Server yêu cầu đổi mode: { "type": "MODE_CHANGE", "data": {"mode": "MANUAL"} }
         String modeStr = doc["data"]["mode"] | "";
-        Serial.printf("[WS] ▶ MODE_CHANGE request: %s\n", modeStr.c_str());
+        // Serial.printf("[WS] ▶ MODE_CHANGE request: %s\n", modeStr.c_str());
         
         if      (modeStr == "AUTONOMOUS") setMode(AUTONOMOUS);
         else if (modeStr == "MANUAL")     setMode(MANUAL);
-        else Serial.printf("[WS] ⚠ Mode không hợp lệ: %s\n", modeStr.c_str());
+        //else // Serial.printf("[WS] ⚠ Mode không hợp lệ: %s\n", modeStr.c_str());
 
     } else if (type == "PING") {
         NetworkManager::wsSend("{\"type\":\"PONG\"}");
 
     } else if (type == "WELCOME") {
-        Serial.printf("[WS] Server: %s\n",
-                      doc["data"]["message"].as<const char*>());
+        // Serial.printf("[WS] Server: %s\n",doc["data"]["message"].as<const char*>());
 
     } else {
-        Serial.printf("[WS] Bỏ qua type không xử lý: %s\n", type.c_str());
+        // Serial.printf("[WS] Bỏ qua type không xử lý: %s\n", type.c_str());
     }
 }
 
@@ -231,7 +230,7 @@ void CommandProcessor::sendStatusUpdate() {
 
 void CommandProcessor::processCommand(const JsonObject& cmd) {
     if (cmd.isNull()) {
-        Serial.println("[CMD] processCommand: null object, bỏ qua");
+        // Serial.println("[CMD] processCommand: null object, bỏ qua");
         return;
     }
 
@@ -239,14 +238,14 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
     String command = cmd["command"] | "";
 
     if (command.isEmpty()) {
-        Serial.println("[CMD] Lệnh thiếu command, bỏ qua");
+        // Serial.println("[CMD] Lệnh thiếu command, bỏ qua");
         return;
     }
 
     if (id < 0) {
-        Serial.printf("[CMD] ▶ realtime command=%s (no id)\n", command.c_str());
+        // Serial.printf("[CMD] ▶ realtime command=%s (no id)\n", command.c_str());
     } else {
-        Serial.printf("[CMD] ▶ id=%d  command=%s\n", id, command.c_str());
+        // Serial.printf("[CMD] ▶ id=%d  command=%s\n", id, command.c_str());
     }
 
     // ── Safety: Từ chối lệnh chuyển động khi đang EMERGENCY ──────
@@ -255,7 +254,7 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
         bool isSafe = (command == "SET_MODE" || command == "STOP" || command == "SET_WIFI");
         if (!isSafe) {
             String msg = "id=" + String(id) + " REJECTED (EMERGENCY state)";
-            Serial.println("[CMD] ⚠ " + msg);
+            // Serial.println("[CMD] ⚠ " + msg);
             sendLog("command_rejected", msg);
             markExecuted(id);
             return;
@@ -275,7 +274,7 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
         if      (modeStr == "AUTONOMOUS") setMode(AUTONOMOUS);
         else if (modeStr == "MANUAL")     setMode(MANUAL);
         else {
-            Serial.printf("[CMD] SET_MODE: mode không hợp lệ '%s'\n", modeStr.c_str());
+            // Serial.printf("[CMD] SET_MODE: mode không hợp lệ '%s'\n", modeStr.c_str());
         }
 
     } else if (command == "SET_WIFI") {
@@ -283,7 +282,7 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
         String pass = params["password"] | "";
 
         if (ssid.isEmpty()) {
-            Serial.println("[CMD] SET_WIFI: thiếu ssid");
+            // Serial.println("[CMD] SET_WIFI: thiếu ssid");
             sendLog("wifi_config_failed", "missing ssid");
         } else {
             bool ok = NetworkManager::setWiFiCredentials(ssid, pass, true);
@@ -298,7 +297,7 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
         // Tất cả lệnh chuyển động yêu cầu mode MANUAL
         if (_mode != MANUAL) {
             String msg = "id=" + String(id) + " IGNORED (không ở MANUAL mode)";
-            Serial.println("[CMD] " + msg);
+            // Serial.println("[CMD] " + msg);
             sendLog("command_ignored", msg);
             markExecuted(id);
             return;
@@ -339,28 +338,28 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
             MotorController::moveDifferential(speed, speed);
-            Serial.printf("[CMD] MOVE FORWARD speed=%d\n", speed);
+            // Serial.printf("[CMD] MOVE FORWARD speed=%d\n", speed);
 
         } else if (dir == "BACKWARD") {
             MotorController::setTargetSpeed(-speed);
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
             MotorController::moveDifferential(-speed, -speed);
-            Serial.printf("[CMD] MOVE BACKWARD speed=%d\n", speed);
+            // Serial.printf("[CMD] MOVE BACKWARD speed=%d\n", speed);
 
         } else if (dir == "LEFT") {
             MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_LEFT_MAX);
             MotorController::moveDifferential(speed, speed);
-            Serial.printf("[CMD] MOVE LEFT speed=%d\n", speed);
+            // Serial.printf("[CMD] MOVE LEFT speed=%d\n", speed);
 
         } else if (dir == "RIGHT") {
             MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_RIGHT_MAX);
             MotorController::moveDifferential(speed, speed);
-            Serial.printf("[CMD] MOVE RIGHT speed=%d\n", speed);
+            // Serial.printf("[CMD] MOVE RIGHT speed=%d\n", speed);
 
         } else {
-            Serial.printf("[CMD] MOVE: direction không hợp lệ '%s'\n", dir.c_str());
+            // Serial.printf("[CMD] MOVE: direction không hợp lệ '%s'\n", dir.c_str());
             return;
         }
 
@@ -369,7 +368,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             vTaskDelay(pdMS_TO_TICKS(duration));
             MotorController::stopMotor();
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
-            Serial.printf("[CMD] MOVE kết thúc sau %d ms\n", duration);
+            // Serial.printf("[CMD] MOVE kết thúc sau %d ms\n", duration);
         }
 
     } else if (command == "STOP") {
@@ -380,7 +379,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         MotorController::stopMotor();
         MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
         MotorController::setTargetSpeed(0);
-        Serial.println("[CMD] STOP");
+        // Serial.println("[CMD] STOP");
 
     } else if (command == "TURN") {
         /*
@@ -396,15 +395,15 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         if (dir == "LEFT") {
             int servoAngle = constrain(SERVO_STRAIGHT - angle, SERVO_LEFT_MAX, SERVO_STRAIGHT);
             MotorController::setTargetSteerServoAngle(servoAngle);
-            Serial.printf("[CMD] TURN LEFT angle=%d → servo=%d\n", angle, servoAngle);
+            // Serial.printf("[CMD] TURN LEFT angle=%d → servo=%d\n", angle, servoAngle);
 
         } else if (dir == "RIGHT") {
             int servoAngle = constrain(SERVO_STRAIGHT + angle, SERVO_STRAIGHT, SERVO_RIGHT_MAX);
             MotorController::setTargetSteerServoAngle(servoAngle);
-            Serial.printf("[CMD] TURN RIGHT angle=%d → servo=%d\n", angle, servoAngle);
+            // Serial.printf("[CMD] TURN RIGHT angle=%d → servo=%d\n", angle, servoAngle);
 
         } else {
-            Serial.printf("[CMD] TURN: direction không hợp lệ '%s'\n", dir.c_str());
+            // Serial.printf("[CMD] TURN: direction không hợp lệ '%s'\n", dir.c_str());
         }
 
     } else if (command == "SET_SPEED") {
@@ -415,7 +414,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         int speed = params["speed"] | CRUISE_SPEED;
         speed = constrain(speed, 0, 255);
         MotorController::setTargetSpeed(speed);
-        Serial.printf("[CMD] SET_SPEED %d\n", speed);
+        // Serial.printf("[CMD] SET_SPEED %d\n", speed);
 
     } else if (command == "JOYSTICK") {
         /*
@@ -449,7 +448,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         }
 
     } else {
-        Serial.printf("[CMD] Lệnh không xử lý: %s\n", command.c_str());
+        // Serial.printf("[CMD] Lệnh không xử lý: %s\n", command.c_str());
     }
 }
 
@@ -459,8 +458,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
 
 void CommandProcessor::setMode(OperationMode mode) {
     if (_mode == mode) {
-        Serial.printf("[CMD] setMode: đã ở mode %s, bỏ qua\n",
-                      mode == AUTONOMOUS ? "AUTONOMOUS" : "MANUAL");
+        // Serial.printf("[CMD] setMode: đã ở mode %s, bỏ qua\n", mode == AUTONOMOUS ? "AUTONOMOUS" : "MANUAL");
         return;
     }
 
@@ -468,7 +466,7 @@ void CommandProcessor::setMode(OperationMode mode) {
     UltrasonicSensor::setMode(mode);  // Suspend/resume sensor tasks
 
     if (mode == AUTONOMOUS) {
-        Serial.println("[CMD] ══ Chuyển sang AUTONOMOUS ══");
+        // Serial.println("[CMD] ══ Chuyển sang AUTONOMOUS ══");
         // [FIX] Reset trap counters khi chuyển sang AUTO để tránh trigger ESCAPE ngay lập tức
         VehicleStateMachine::resetTrapCounters();
         if (!_isHandlingWsMessage) {
@@ -482,7 +480,7 @@ void CommandProcessor::setMode(OperationMode mode) {
         MotorController::setTargetSpeed(0);
         _lastJoystickInputTime = millis();
         _joystickDriveActive = false;
-        Serial.println("[CMD] ══ Chuyển sang MANUAL ══");
+        // Serial.println("[CMD] ══ Chuyển sang MANUAL ══");
         if (!_isHandlingWsMessage) {
             sendLog("mode_change", "switched to MANUAL");
         }
@@ -506,9 +504,9 @@ void CommandProcessor::markExecuted(int id) {
     String path = "/api/commands/" + String(id) + "/execute";
     int code = NetworkManager::httpPut(path);
     if (code == 200) {
-        Serial.printf("[CMD] ✓ Đã đánh dấu id=%d executed\n", id);
+        // Serial.printf("[CMD] ✓ Đã đánh dấu id=%d executed\n", id);
     } else {
-        Serial.printf("[CMD] ✗ markExecuted thất bại id=%d code=%d\n", id, code);
+        // Serial.printf("[CMD] ✗ markExecuted thất bại id=%d code=%d\n", id, code);
     }
 }
 
@@ -523,7 +521,7 @@ void CommandProcessor::sendLog(const String& event, const String& message) {
 
     int code = NetworkManager::httpPost("/api/logs", body);
     if (code != 201) {
-        Serial.printf("[CMD] sendLog thất bại event=%s code=%d\n", event.c_str(), code);
+        // Serial.printf("[CMD] sendLog thất bại event=%s code=%d\n", event.c_str(), code);
     }
 }
 
@@ -554,7 +552,7 @@ void CommandProcessor::tickQueueFlush() {
     if (batchCount == 0) return;
     
     _queueFlushInProgress = true;
-    Serial.printf("[CMD] Flushing %d GPS points from queue...\n", batchCount);
+    // Serial.printf("[CMD] Flushing %d GPS points from queue...\n", batchCount);
     
     // Tạo JSON array
     StaticJsonDocument<2048> doc;
@@ -588,8 +586,8 @@ void CommandProcessor::tickQueueFlush() {
     _queueFlushInProgress = false;
     
     if (code == 201 || code == 200) {
-        Serial.printf("[CMD] ✓ Queue flush OK (sent %d points)\n", batchCount);
+        // Serial.printf("[CMD] ✓ Queue flush OK (sent %d points)\n", batchCount);
     } else {
-        Serial.printf("[CMD] ✗ Queue flush failed code=%d, points discarded\n", code);
+        // Serial.printf("[CMD] ✗ Queue flush failed code=%d, points discarded\n", code);
     }
 }

@@ -110,7 +110,7 @@ void VehicleStateMachine::updateTrapDetection(State newState) {
     if ((newState == TURN_LEFT && lastTurnDirection == TURN_RIGHT) ||
         (newState == TURN_RIGHT && lastTurnDirection == TURN_LEFT)) {
         oscillationCount++;
-        Serial.printf("[TRAP] Oscillation #%d (L↔R)\n", oscillationCount);
+        // Serial.printf("[TRAP] Oscillation #%d (L↔R)\n", oscillationCount);
     }
 
     // Cập nhật hướng rẽ cuối
@@ -121,7 +121,7 @@ void VehicleStateMachine::updateTrapDetection(State newState) {
     // ── Đếm BACKING liên tục ──
     if (newState == BACKING) {
         backingCount++;
-        Serial.printf("[TRAP] Backing #%d\n", backingCount);
+        // Serial.printf("[TRAP] Backing #%d\n", backingCount);
     }
 
     // ── Bắt đầu đếm thời gian trap nếu chưa ──
@@ -133,22 +133,19 @@ void VehicleStateMachine::updateTrapDetection(State newState) {
 bool VehicleStateMachine::shouldEscape() {
     // Điều kiện 1: Oscillation quá nhiều (góc chết chữ V)
     if (oscillationCount >= MAX_OSCILLATIONS) {
-        Serial.printf("[TRAP] ESCAPE: %d oscillations >= %d\n",
-                      oscillationCount, MAX_OSCILLATIONS);
+        // Serial.printf("[TRAP] ESCAPE: %d oscillations >= %d\n", oscillationCount, MAX_OSCILLATIONS);
         return true;
     }
 
     // Điều kiện 2: Lùi quá nhiều lần (tiến-lùi không thoát)
     if (backingCount >= MAX_BACKING_RETRIES) {
-        Serial.printf("[TRAP] ESCAPE: %d backings >= %d\n",
-                      backingCount, MAX_BACKING_RETRIES);
+        // Serial.printf("[TRAP] ESCAPE: %d backings >= %d\n", backingCount, MAX_BACKING_RETRIES);
         return true;
     }
 
     // Điều kiện 3: Quá lâu không về NORMAL (kẹt tổng thể)
     if (trapStartTime > 0 && (millis() - trapStartTime) >= TRAP_TIMEOUT_MS) {
-        Serial.printf("[TRAP] ESCAPE: %lums without NORMAL >= %lu\n",
-                      millis() - trapStartTime, TRAP_TIMEOUT_MS);
+        // Serial.printf("[TRAP] ESCAPE: %lums without NORMAL >= %lu\n",  millis() - trapStartTime, TRAP_TIMEOUT_MS);
         return true;
     }
 
@@ -183,7 +180,7 @@ void VehicleStateMachine::begin() {
     currentState = NORMAL;
     lastNormalTime = millis();
     resetTrapCounters();
-    Serial.println("[FSM] State Machine initialized: NORMAL");
+    // Serial.println("[FSM] State Machine initialized: NORMAL");
 }
 
 void VehicleStateMachine::update() {
@@ -193,7 +190,7 @@ void VehicleStateMachine::update() {
             MotorController::stopMotor();
             currentState = EMERGENCY;
             stateStartTime = millis();
-            Serial.println("[SAFETY] EMERGENCY STOP");
+            // Serial.println("[SAFETY] EMERGENCY STOP");
         }
         return;
     }
@@ -202,7 +199,7 @@ void VehicleStateMachine::update() {
     if (EncoderSensor::isStalled() && currentState != STOP
         && currentState != EMERGENCY && currentState != BACKING
         && currentState != ESCAPE ) {
-        Serial.println("[ENCODER] XE BI KET! Motor chay nhung banh khong quay");
+        // Serial.println("[ENCODER] XE BI KET! Motor chay nhung banh khong quay");
         MotorController::stopMotor();
         // Thử lùi thay vì dừng hẳn
         long back = UltrasonicSensor::getBackDistance();
@@ -211,10 +208,10 @@ void VehicleStateMachine::update() {
             stateStartTime = millis();
              EncoderSensor::resetDistance();  // [FIX] Reset trước khi lùi
             updateTrapDetection(BACKING);
-            Serial.println("[FSM] STALL->BACKING");
+            // Serial.println("[FSM] STALL->BACKING");
         } else {
             currentState = STOP;
-            Serial.println("[FSM] STALL->STOP");
+            // Serial.println("[FSM] STALL->STOP");
         }
         return;
     }
@@ -237,10 +234,10 @@ void VehicleStateMachine::update() {
             stateStartTime = now;
             // Reset encoder để đo quãng đường xoay
             EncoderSensor::resetDistance();
-            Serial.println("[FSM] >>> ENTERING ESCAPE MODE <<<");
+            // Serial.println("[FSM] >>> ENTERING ESCAPE MODE <<<");
             // Không return — để handleEscapeState xử lý ngay
         } else {
-            Serial.println("[FSM] ⚠ ESCAPE postponed: waiting for valid sensor data");
+            // Serial.println("[FSM] ⚠ ESCAPE postponed: waiting for valid sensor data");
             // Reset trap counters để không spam check
             resetTrapCounters();
         }
@@ -255,7 +252,7 @@ void VehicleStateMachine::update() {
         updateTrapDetection(nextState);
         currentState = nextState;
         stateStartTime = now;
-        Serial.printf("[FSM] EMERGENCY FRONT=%ld -> %d\n", front, currentState);
+        // Serial.printf("[FSM] EMERGENCY FRONT=%ld -> %d\n", front, currentState);
         return;
     }
     
@@ -299,12 +296,12 @@ void VehicleStateMachine::handleNormalState(long front, long right, long left) {
     // Cảm biến bên — né nhẹ
     if (right < SIDE_DANGER_DIST && left >= SIDE_DANGER_DIST) {
         currentState = AVOID_LEFT;
-        Serial.printf("[FSM] NORMAL->AVOID_LEFT (R=%ld)\n", right);
+        // Serial.printf("[FSM] NORMAL->AVOID_LEFT (R=%ld)\n", right);
         return;
     }
     if (left < SIDE_DANGER_DIST && right >= SIDE_DANGER_DIST) {
         currentState = AVOID_RIGHT;
-        Serial.printf("[FSM] NORMAL->AVOID_RIGHT (L=%ld)\n", left);
+        // Serial.printf("[FSM] NORMAL->AVOID_RIGHT (L=%ld)\n", left);
         return;
     }
 
@@ -315,8 +312,7 @@ void VehicleStateMachine::handleNormalState(long front, long right, long left) {
         updateTrapDetection(nextState);
         currentState = nextState;
         stateStartTime = millis();
-        Serial.printf("[FSM] NORMAL->%d (F=%ld R=%ld L=%ld)\n",
-                      nextState, front, right, left);
+        // Serial.printf("[FSM] NORMAL->%d (F=%ld R=%ld L=%ld)\n", nextState, front, right, left);
     }
     else if (front <= PREPARE_DISTANCE) {
         currentState = SLOW;
@@ -330,7 +326,7 @@ void VehicleStateMachine::handleSlowState(long front, long right, long left) {
 
     if (front > PREPARE_DISTANCE && right > SIDE_DANGER_DIST && left > SIDE_DANGER_DIST) {
         currentState = NORMAL;
-        Serial.println("[FSM] SLOW->NORMAL");
+        // Serial.println("[FSM] SLOW->NORMAL");
         return;
     }
 
@@ -340,8 +336,7 @@ void VehicleStateMachine::handleSlowState(long front, long right, long left) {
         updateTrapDetection(nextState);
         currentState = nextState;
         stateStartTime = millis();
-        Serial.printf("[FSM] SLOW->%d (F=%ld R=%ld L=%ld)\n",
-                      nextState, front, right, left);
+        // Serial.printf("[FSM] SLOW->%d (F=%ld R=%ld L=%ld)\n", nextState, front, right, left);
         return;
     }
 
@@ -360,7 +355,7 @@ void VehicleStateMachine::handleAvoidLeftState(long front, long right, long left
 
     if (right > TURN_DISTANCE) {
         currentState = (front > PREPARE_DISTANCE) ? NORMAL : SLOW;
-        Serial.printf("[FSM] AVOID_LEFT->%d\n", currentState);
+        // Serial.printf("[FSM] AVOID_LEFT->%d\n", currentState);
         return;
     }
 
@@ -394,7 +389,7 @@ void VehicleStateMachine::handleAvoidRightState(long front, long right, long lef
 
     if (left > TURN_DISTANCE) {
         currentState = (front > PREPARE_DISTANCE) ? NORMAL : SLOW;
-        Serial.printf("[FSM] AVOID_RIGHT->%d\n", currentState);
+        // Serial.printf("[FSM] AVOID_RIGHT->%d\n", currentState);
         return;
     }
 
@@ -429,7 +424,7 @@ void VehicleStateMachine::handleTurnLeftState(long front, long right, long left,
     // Thoát thành công
     if (front > TURN_DISTANCE && left > SIDE_DANGER_DIST) {
         currentState = NORMAL;
-        Serial.println("[FSM] TURN_LEFT->NORMAL");
+        // Serial.println("[FSM] TURN_LEFT->NORMAL");
         return;
     }
 
@@ -439,7 +434,7 @@ void VehicleStateMachine::handleTurnLeftState(long front, long right, long left,
         updateTrapDetection(nextState);
         currentState = nextState;
         stateStartTime = now;
-        Serial.printf("[FSM] TURN_LEFT timeout->%d\n", nextState);
+        // Serial.printf("[FSM] TURN_LEFT timeout->%d\n", nextState);
     }
 }
 
@@ -450,7 +445,7 @@ void VehicleStateMachine::handleTurnRightState(long front, long right, long left
 
     if (front > TURN_DISTANCE && right > SIDE_DANGER_DIST) {
         currentState = NORMAL;
-        Serial.println("[FSM] TURN_RIGHT->NORMAL");
+        // Serial.println("[FSM] TURN_RIGHT->NORMAL");
         return;
     }
 
@@ -459,7 +454,7 @@ void VehicleStateMachine::handleTurnRightState(long front, long right, long left
         updateTrapDetection(nextState);
         currentState = nextState;
         stateStartTime = now;
-        Serial.printf("[FSM] TURN_RIGHT timeout->%d\n", nextState);
+        // Serial.printf("[FSM] TURN_RIGHT timeout->%d\n", nextState);
     }
 }
 
@@ -467,7 +462,7 @@ void VehicleStateMachine::handleBackingState(long back, unsigned long now) {
     if (back <= BACK_DANGER_DISTANCE) {
         MotorController::stopMotor();
         currentState = STOP;
-        Serial.println("[FSM] BACKING->STOP (sau bi chan)");
+        // Serial.println("[FSM] BACKING->STOP (sau bi chan)");
         return;
     }
 
@@ -491,7 +486,7 @@ void VehicleStateMachine::handleBackingState(long back, unsigned long now) {
         updateTrapDetection(nextState);
         currentState = nextState;
         stateStartTime = now;
-        Serial.printf("[FSM] BACKING->%d\n", nextState);
+        // Serial.printf("[FSM] BACKING->%d\n", nextState);
     }
 }
 
@@ -512,7 +507,7 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
     // ── Thoát thành công? ──
     if (front > TURN_DISTANCE &&
         (left > SIDE_DANGER_DIST || right > SIDE_DANGER_DIST)) {
-        Serial.println("[FSM] ESCAPE SUCCESS -> NORMAL");
+        // Serial.println("[FSM] ESCAPE SUCCESS -> NORMAL");
         currentState = NORMAL;
         resetTrapCounters();
         return;
@@ -556,18 +551,18 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
     if (front > SLOW_DISTANCE) {
         currentState = SLOW;
         resetTrapCounters();
-        Serial.println("[FSM] ESCAPE->SLOW");
+        // Serial.println("[FSM] ESCAPE->SLOW");
     } else if (back > BACK_DANGER_DISTANCE) {
         // Thử lùi thêm 1 lần
         currentState = BACKING;
         stateStartTime = now;
         EncoderSensor::resetDistance();
         // KHÔNG reset trap counters — nếu vẫn kẹt sẽ vào ESCAPE lần nữa
-        Serial.println("[FSM] ESCAPE->BACKING (retry)");
+        // Serial.println("[FSM] ESCAPE->BACKING (retry)");
     } else {
         currentState = STOP;
         resetTrapCounters(); // Reset để khi sensor clear sẽ chạy lại
-        Serial.println("[FSM] ESCAPE->STOP (bi chan hoan toan)");
+        // Serial.println("[FSM] ESCAPE->STOP (bi chan hoan toan)");
     }
 }
 
@@ -580,7 +575,7 @@ void VehicleStateMachine::handleStopState(long front, long right, long left, lon
     if (nextState != STOP) {
         currentState = nextState;
         stateStartTime = millis();
-        Serial.printf("[FSM] STOP->%d\n", nextState);
+        // Serial.printf("[FSM] STOP->%d\n", nextState);
     }
 }
 
@@ -592,7 +587,7 @@ void VehicleStateMachine::handleEmergencyState(long front) {
             currentState = STOP;
             stateStartTime = millis();
             resetTrapCounters();
-            Serial.println("[FSM] EMERGENCY->STOP (phuc hoi)");
+            // Serial.println("[FSM] EMERGENCY->STOP (phuc hoi)");
         }
     }
 }
@@ -614,31 +609,31 @@ void VehicleStateMachine::debugOutput() {
         "TURN_L", "TURN_R", "BACKING", "STOP", "EMERG", "MANUAL", "ESCAPE"
     };
 
-    Serial.printf("[%s] F:%ld R:%ld L:%ld B:%ld | tgt:%d cur:%d reg:%d | ML:%d MR:%d | Steer:%d\n",
-        stateNames[currentState],
-        front, right, left, back,
-        MotorController::getTargetSpeed(),
-        MotorController::getCurrentSpeed(),
-        MotorController::getRegulatedSpeed(),
-        MotorController::getLeftMotorSpeed(),
-        MotorController::getRightMotorSpeed(),
-        MotorController::getSteerServoAngle()
-    );
+    // Serial.printf("[%s] F:%ld R:%ld L:%ld B:%ld | tgt:%d cur:%d reg:%d | ML:%d MR:%d | Steer:%d\n",
+    //     stateNames[currentState],
+    //     front, right, left, back,
+    //     MotorController::getTargetSpeed(),
+    //     MotorController::getCurrentSpeed(),
+    //     MotorController::getRegulatedSpeed(),
+    //     MotorController::getLeftMotorSpeed(),
+    //     MotorController::getRightMotorSpeed(),
+    //     MotorController::getSteerServoAngle()
+    // );
 
-    Serial.printf("  ENC RPM:%.0f v:%.1fcm/s d:%.0fcm dir:%d PID:%d %s\n",
-        EncoderSensor::getRPM(),
-        EncoderSensor::getSpeedCmPerSec(),
-        EncoderSensor::getDistanceCm(),
-        EncoderSensor::getDirection(),
-        MotorController::getPIDOutput(),
-        EncoderSensor::isStalled() ? "STALL!" : "OK"
-    );
+    // Serial.printf("  ENC RPM:%.0f v:%.1fcm/s d:%.0fcm dir:%d PID:%d %s\n",
+    //     EncoderSensor::getRPM(),
+    //     EncoderSensor::getSpeedCmPerSec(),
+    //     EncoderSensor::getDistanceCm(),
+    //     EncoderSensor::getDirection(),
+    //     MotorController::getPIDOutput(),
+    //     EncoderSensor::isStalled() ? "STALL!" : "OK"
+    // );
 
     // [MỚI] Anti-trap info
     if (oscillationCount > 0 || backingCount > 0) {
-        Serial.printf("  TRAP osc:%d back:%d escape:%s\n",
-            oscillationCount, backingCount,
-            escapeMode ? "YES" : "no"
-        );
+        // Serial.printf("  TRAP osc:%d back:%d escape:%s\n",
+        //     oscillationCount, backingCount,
+        //     escapeMode ? "YES" : "no"
+        // );
     }
 }

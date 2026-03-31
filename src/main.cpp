@@ -8,6 +8,8 @@
 #include "VehicleStateMachine.h"
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
+#include "MicroRosBridge.h"
+
 
 // Task Handles để quản lý (Suspend/Resume/Monitor)
 TaskHandle_t xLogicTaskHandle = NULL;
@@ -18,21 +20,21 @@ void vLogicTask(void *pvParameters);
 void vAppTask(void *pvParameters);
 
 void setup() {
-    Serial.begin(115200);
-    Serial.println("=== ESP32 ROBOT ===");
+    // Serial.begin(115200);
+    // Serial.println("=== ESP32 ROBOT ===");
 
     // 1. phần cứng
     UltrasonicSensor::begin(); // 4 cam bien -> 4 tasks Core 0
     
     if (!MPUSensor::begin()) { // mpuTask trên Core 1
-        Serial.println("!!! DUNG LAI: Loi MPU6050 !!!");
+        // Serial.println("!!! DUNG LAI: Loi MPU6050 !!!");
         while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
     
     MotorController::begin();
     // Encoder (PCNT hardware + task Core 1) 
     if (!EncoderSensor::begin()) {
-        Serial.println("!!! ENCODER FAILED !!!");
+        // Serial.println("!!! ENCODER FAILED !!!");
         // Không halt — encoder là optional, robot vẫn chạy được không có PID
     } else {
         MotorController::enablePID(true);  // Bật PID khi encoder hoạt động
@@ -67,7 +69,7 @@ void setup() {
         0                       // Core 0 (Chuyên trách kết nối & I/O)
     );
 
-    Serial.println("=== TAT CA TASK DA KHOI CHAY ===");
+    // Serial.println("=== TAT CA TASK DA KHOI CHAY ===");
     
     // Xóa Task setup() để giải phóng bộ nhớ (FreeRTOS sẽ quản lý hoàn toàn)
     vTaskDelete(NULL); 
@@ -121,7 +123,7 @@ void vAppTask(void *pvParameters) {
     // ── Bước 1: WiFi ──
     bool wifiOk = NetworkManager::initWiFi();
     if (!wifiOk) {
-        Serial.println("[APP] Không có WiFi — tiếp tục ở chế độ offline (AUTONOMOUS)");
+        // Serial.println("[APP] Không có WiFi — tiếp tục ở chế độ offline (AUTONOMOUS)");
     }
 
     // ── Bước 2: WebSocket ──
@@ -133,7 +135,9 @@ void vAppTask(void *pvParameters) {
     // ── Bước 3: Khởi tạo CommandProcessor ──
     CommandProcessor::begin();
 
-    Serial.println("[APP] AppTask ready.");
+    // Serial.println("[APP] AppTask ready.");
+    MicroRosBridge::begin(Serial);
+
 
     for (;;) {
         // Kiểm tra WiFi, tự reconnect với exponential backoff
@@ -163,6 +167,9 @@ void vAppTask(void *pvParameters) {
 
         // Safety watchdog: nếu joystick ngừng gửi realtime command thì tự dừng xe
         CommandProcessor::tickSafety();
+
+        MicroRosBridge::tick();
+
 
         // Nhường CPU — 50ms (20Hz), đủ nhạy cho MANUAL control
         vTaskDelay(pdMS_TO_TICKS(50));

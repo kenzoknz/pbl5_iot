@@ -31,7 +31,7 @@ SemaphoreHandle_t encoderMutex;
 bool EncoderSensor::begin() {
     encoderMutex = xSemaphoreCreateMutex();
     if (encoderMutex == NULL) {
-        Serial.println("[ENCODER][FATAL] Mutex creation failed!");
+        // Serial.println("[ENCODER][FATAL] Mutex creation failed!");
         return false;
     }
 
@@ -52,7 +52,7 @@ bool EncoderSensor::begin() {
 
     esp_err_t err = pcnt_unit_config(&pcnt_config_a);
     if (err != ESP_OK) {
-        Serial.printf("[ENCODER][ERROR] PCNT Channel A config failed: %d\n", err);
+        // Serial.printf("[ENCODER][ERROR] PCNT Channel A config failed: %d\n", err);
         return false;
     }
 
@@ -72,7 +72,7 @@ bool EncoderSensor::begin() {
 
     err = pcnt_unit_config(&pcnt_config_b);
     if (err != ESP_OK) {
-        Serial.printf("[ENCODER][ERROR] PCNT Channel B config failed: %d\n", err);
+        // Serial.printf("[ENCODER][ERROR] PCNT Channel B config failed: %d\n", err);
         return false;
     }
 
@@ -87,7 +87,7 @@ bool EncoderSensor::begin() {
     pcnt_counter_clear(PCNT_UNIT);
     pcnt_counter_resume(PCNT_UNIT);
 
-    Serial.println("[ENCODER] PCNT Quadrature x4 initialized (2400 counts/rev)");
+    // Serial.println("[ENCODER] PCNT Quadrature x4 initialized (2400 counts/rev)");
 
     // ── Tạo Task đọc encoder — Core 1 ──
     // Tần số 50Hz (20ms) — đủ nhanh cho PID loop
@@ -191,7 +191,7 @@ void EncoderSensor::encoderTask(void *pvParameters) {
         static unsigned long lastPrint = 0;
         if (millis() - lastPrint > 500) {
             lastPrint = millis();
-            Serial.printf("[ENC] delta:%d RPM:%.0f filtered:%.0f dir:%d dist:%.1fcm stall:%d\n",
+            // Serial.printf("[ENC] delta:%d RPM:%.0f filtered:%.0f dir:%d dist:%.1fcm stall:%d\n",
                           deltaPulses, instantRPM, localFilteredRPM, dir,
                           totalDistanceCm, stall);
         }

@@ -73,7 +73,7 @@ void MotorController::begin() {
     steerServo.attach(SERVO_STEER_PIN, 500, 2400);
     steerServo.write(90);
     
-    Serial.println("[MOTOR] Initialized: BTS7960 + Steering Servo");
+    // Serial.println("[MOTOR] Initialized: BTS7960 + Steering Servo");
 }
 
 // ========== SERVO LÁI ==========
@@ -149,7 +149,7 @@ void MotorController::enablePID(bool enable) {
         pidOutput    = 0;
         regulatedSpeed = 0;
     }
-    Serial.printf("[MOTOR] PID %s\n", enable ? "ENABLED" : "DISABLED");
+    // Serial.printf("[MOTOR] PID %s\n", enable ? "ENABLED" : "DISABLED");
 }
 
 void MotorController::updatePID() {
@@ -195,7 +195,7 @@ void MotorController::updatePID() {
     static unsigned long lastPID = 0;
     if (millis() - lastPID > 500) {
         lastPID = millis();
-        Serial.printf("[PID] tgtRPM:%.0f actRPM:%.0f err:%.1f out:%d | tgtPWM:%d curPWM:%d regPWM:%d\n",
+        // Serial.printf("[PID] tgtRPM:%.0f actRPM:%.0f err:%.1f out:%d | tgtPWM:%d curPWM:%d regPWM:%d\n",
                       targetRPM, actualRPM, error, pidOutput,
                       targetSpeed, currentSpeed, regulatedSpeed);
     }

@@ -23,7 +23,7 @@ portMUX_TYPE GPSSensor::_dataMux = portMUX_INITIALIZER_UNLOCKED;
 
 bool GPSSensor::begin() {
     Serial2.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-    Serial.printf("[GPS] Neo-7N init UART2 RX=%d TX=%d BAUD=%d\n", GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
+    // Serial.printf("[GPS] Neo-7N init UART2 RX=%d TX=%d BAUD=%d\n", GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
     return true;
 }
 

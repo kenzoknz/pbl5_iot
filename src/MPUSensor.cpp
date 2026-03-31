@@ -20,24 +20,24 @@ bool MPUSensor::begin() {
     
     // Khởi tạo MPU6050
     byte status = mpu.begin();
-    Serial.print("MPU6050 status: ");
-    Serial.println(status);
+    // Serial.print("MPU6050 status: ");
+    // Serial.println(status);
     
     if (status != 0) {
-        Serial.println("!!! LOI: Khong ket noi duoc MPU6050 !!!");
-        Serial.println("Kiem tra day noi SDA/SCL va nguon cap 3.3V");
+        // Serial.println("!!! LOI: Khong ket noi duoc MPU6050 !!!");
+        // Serial.println("Kiem tra day noi SDA/SCL va nguon cap 3.3V");
         return false;
     }
     mpuMutex = xSemaphoreCreateMutex();
     if (mpuMutex == NULL) {
-        Serial.println("[MPU][ERROR] Khong tao duoc mpuMutex!");
+        // Serial.println("[MPU][ERROR] Khong tao duoc mpuMutex!");
         return false;   // Báo lỗi lên caller, không để chạy tiếp
     }
     
-    Serial.println("Dang hieu chuan MPU6050... Giu xe yen!");
+    // Serial.println("Dang hieu chuan MPU6050... Giu xe yen!");
     vTaskDelay(pdMS_TO_TICKS(1000));   // Chờ cảm biến ổn định
     mpu.calcOffsets();
-    Serial.println("Hieu chuan hoan tat!");
+    // Serial.println("Hieu chuan hoan tat!");
 
     xTaskCreatePinnedToCore(
         mpuTask, "MPUTask", 4096, NULL,
@@ -77,12 +77,10 @@ void MPUSensor::mpuTask(void *pvParameters) {
         collisionFlag = collision;
         tiltFlag = tilt;
         if (collision) {
-            Serial.printf("[MPU] VA CHAM! delta=%.3f (nguong=%.3f)\n",
-                        accelChange, (float)COLLISION_THRESHOLD);
+            // Serial.printf("[MPU] VA CHAM! delta=%.3f (nguong=%.3f)\n", accelChange, (float)COLLISION_THRESHOLD);
         }
         if (tilt) {
-            Serial.printf("[MPU] NGHIENG NGUY HIEM: X=%.1f° Y=%.1f°\n",
-                        mpu.getAngleX(), mpu.getAngleY());
+            // Serial.printf("[MPU] NGHIENG NGUY HIEM: X=%.1f° Y=%.1f°\n", mpu.getAngleX(), mpu.getAngleY());
         }
 
         xSemaphoreGive(mpuMutex);
@@ -131,7 +129,7 @@ bool MPUSensor::checkCollision() {
     
 //     float accelChange = abs(accelMagnitude - lastAccelMagnitude);
 //     if (accelChange > COLLISION_THRESHOLD) {
-//         Serial.println("!!! VA CHAM PHAT HIEN !!!");
+//         // Serial.println("!!! VA CHAM PHAT HIEN !!!");
 //         lastAccelMagnitude = accelMagnitude;
 //         return true;
 //     }
@@ -150,11 +148,11 @@ bool MPUSensor::checkTilt() {
 
 // bool MPUSensor::checkTilt() {
 //     if (abs(currentAngleX) > TILT_THRESHOLD || abs(currentAngleY) > TILT_THRESHOLD) {
-//         Serial.print("!!! NGHIENG NGUY HIEM: X=");
-//         Serial.print(currentAngleX);
-//         Serial.print("° Y=");
-//         Serial.print(currentAngleY);
-//         Serial.println("° !!!");
+//         // Serial.print("!!! NGHIENG NGUY HIEM: X=");
+//         // Serial.print(currentAngleX);
+//         // Serial.print("° Y=");
+//         // Serial.print(currentAngleY);
+//         // Serial.println("° !!!");
 //         return true;
 //     }
 //     return false;

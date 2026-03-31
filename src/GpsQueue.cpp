@@ -8,7 +8,7 @@ portMUX_TYPE GpsQueue::_mux = portMUX_INITIALIZER_UNLOCKED;
 
 void GpsQueue::begin() {
     _head = _tail = _count = 0;
-    Serial.println("[GpsQueue] Initialized, capacity=" + String(QUEUE_SIZE));
+    // Serial.println("[GpsQueue] Initialized, capacity=" + String(QUEUE_SIZE));
 }
 
 bool GpsQueue::enqueue(const GpsQueueEntry& entry) {

@@ -62,7 +62,7 @@ void UltrasonicSensor::begin() {
     backMutex       = xSemaphoreCreateMutex();
 
     if (frontGroupMutex == NULL || backMutex == NULL) {
-        Serial.println("[SENSOR][FATAL] Mutex creation failed!");
+        // Serial.println("[SENSOR][FATAL] Mutex creation failed!");
         while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
     
@@ -85,7 +85,7 @@ void UltrasonicSensor::begin() {
         &backTaskHandle, 0          // Core 0
     );
 
-    Serial.println("[SENSOR] 2 tasks for 4 sensors (Front Group + Back)");
+    // Serial.println("[SENSOR] 2 tasks for 4 sensors (Front Group + Back)");
 }
 
 
@@ -96,10 +96,10 @@ void UltrasonicSensor::setMode(OperationMode mode) {
 
     if (mode == OperationMode::MANUAL) {
         tasksEnabled = false;  // Tasks sẽ tự skip sensor reading
-        Serial.println("[SENSOR] MANUAL — sensor reading disabled");
+        // Serial.println("[SENSOR] MANUAL — sensor reading disabled");
     } else {
         tasksEnabled = true;   // Tasks tiếp tục đọc sensors
-        Serial.println("[SENSOR] AUTONOMOUS — sensor reading enabled");
+        // Serial.println("[SENSOR] AUTONOMOUS — sensor reading enabled");
     }
 }
 
@@ -213,7 +213,7 @@ void UltrasonicSensor::frontGroupSensorTask(void *pvParameters) {
         xSemaphoreGive(frontGroupMutex);
 
         #ifdef DEBUG_SENSOR
-        Serial.printf("[US] L:%ld F:%ld R:%ld | EMA L:%.0f F:%.0f R:%.0f\n",
+        // Serial.printf("[US] L:%ld F:%ld R:%ld | EMA L:%.0f F:%.0f R:%.0f\n",
                       rawLeft, rawFront, rawRight, emaLeft, emaFront, emaRight);
         #endif
 
@@ -241,7 +241,7 @@ void UltrasonicSensor::backSensorTask(void *pvParameters) {
         xSemaphoreGive(backMutex);
 
         #ifdef DEBUG_SENSOR
-        Serial.printf("[US] B:%ld | EMA B:%.0f\n", rawBack, emaBack);
+        // Serial.printf("[US] B:%ld | EMA B:%.0f\n", rawBack, emaBack);
         #endif
 
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
