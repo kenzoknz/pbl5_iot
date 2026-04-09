@@ -8,6 +8,7 @@
 #include "VehicleStateMachine.h"
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
+#include "JetsonUART.h"
 
 // Task Handles để quản lý (Suspend/Resume/Monitor)
 TaskHandle_t xLogicTaskHandle = NULL;
@@ -132,8 +133,11 @@ void vAppTask(void *pvParameters) {
 
     // ── Bước 3: Khởi tạo CommandProcessor ──
     CommandProcessor::begin();
+    JetsonUART::begin();
 
     Serial.println("[APP] AppTask ready.");
+
+    bool jetsonTimeoutLogged = false;
 
     for (;;) {
         // Kiểm tra WiFi, tự reconnect với exponential backoff
@@ -163,6 +167,24 @@ void vAppTask(void *pvParameters) {
 
         // Safety watchdog: nếu joystick ngừng gửi realtime command thì tự dừng xe
         CommandProcessor::tickSafety();
+
+        // Jetson UART channel (YOLO/AI command bridge)
+        if (JetsonUART::checkForCommands()) {
+            JetsonUART::handleJetsonCommand();
+            jetsonTimeoutLogged = false;
+        }
+
+        // Periodic status report to Jetson (internally throttled every 500ms)
+        JetsonUART::sendStatus();
+
+        // Jetson watchdog fallback
+        if (!JetsonUART::isJetsonConnected()) {
+            UltrasonicSensor::setMode(AUTONOMOUS);
+            if (!jetsonTimeoutLogged) {
+                Serial.println("[JETSON] Timeout - falling back to AUTONOMOUS");
+                jetsonTimeoutLogged = true;
+            }
+        }
 
         // Nhường CPU — 50ms (20Hz), đủ nhạy cho MANUAL control
         vTaskDelay(pdMS_TO_TICKS(50));

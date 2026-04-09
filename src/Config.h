@@ -68,6 +68,18 @@
 #define GPS_TX_PIN 5
 #define GPS_BAUD   9600
 
+/* ================== JETSON UART (Serial1) ================== */
+#define ROS_RX_PIN                       39   // ESP32 RX  <- Jetson TX (J41 pin 8)
+#define ROS_TX_PIN                       15   // ESP32 TX  -> Jetson RX (J41 pin 10)
+#define JETSON_UART_BAUD              115200
+#define JETSON_UART_JSON_BUFFER_SIZE     512
+#define JETSON_UART_STATUS_INTERVAL_MS   500
+#define JETSON_UART_TIMEOUT_MS          3000
+
+// Pin battery ADC hiện đang trùng encoder (GPIO35), giữ dummy cho tới khi đi dây pin ADC riêng.
+#define JETSON_BATTERY_ADC_PIN           -1
+#define JETSON_BATTERY_DUMMY_VOLTAGE   12.0f
+
 /* ================== GPS QUEUE (Buffer mạng mất) ================== */
 #define GPS_QUEUE_CAPACITY       256              // max entries (~12 KB)
 #define GPS_QUEUE_MIN_INTERVAL   2000             // ms between queue entries
