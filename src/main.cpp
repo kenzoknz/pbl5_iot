@@ -137,6 +137,7 @@ void vAppTask(void *pvParameters) {
 
     Serial.println("[APP] AppTask ready.");
 
+    static uint32_t lastStatusSend = 0;
     bool jetsonTimeoutLogged = false;
 
     for (;;) {
@@ -159,6 +160,30 @@ void vAppTask(void *pvParameters) {
             CommandProcessor::pollMode();  // Sync mode với database
         }
 
+        // NEW: Jetson UART check
+        if (JetsonUART::checkForCommands()) {
+            JetsonUART::handleJetsonCommand();
+            Serial.println("[JETSON] Command executed");
+            jetsonTimeoutLogged = false;
+        }
+
+        // Periodic status send
+        if (millis() - lastStatusSend > JETSON_STATUS_INTERVAL_MS) {
+            JetsonUART::sendStatus();
+            lastStatusSend = millis();
+        }
+
+        // Jetson watchdog fallback (once per timeout)
+        if (!JetsonUART::isJetsonConnected()) {
+            if (!jetsonTimeoutLogged) {
+                UltrasonicSensor::setMode(AUTONOMOUS);
+                Serial.println("[JETSON] Timeout - falling back to AUTONOMOUS");
+                jetsonTimeoutLogged = true;
+            }
+        } else {
+            jetsonTimeoutLogged = false;
+        }
+
         // Flush GPS queue khi mạng lại
         CommandProcessor::tickQueueFlush();
 
@@ -167,24 +192,6 @@ void vAppTask(void *pvParameters) {
 
         // Safety watchdog: nếu joystick ngừng gửi realtime command thì tự dừng xe
         CommandProcessor::tickSafety();
-
-        // Jetson UART channel (YOLO/AI command bridge)
-        if (JetsonUART::checkForCommands()) {
-            JetsonUART::handleJetsonCommand();
-            jetsonTimeoutLogged = false;
-        }
-
-        // Periodic status report to Jetson (internally throttled every 500ms)
-        JetsonUART::sendStatus();
-
-        // Jetson watchdog fallback
-        if (!JetsonUART::isJetsonConnected()) {
-            UltrasonicSensor::setMode(AUTONOMOUS);
-            if (!jetsonTimeoutLogged) {
-                Serial.println("[JETSON] Timeout - falling back to AUTONOMOUS");
-                jetsonTimeoutLogged = true;
-            }
-        }
 
         // Nhường CPU — 50ms (20Hz), đủ nhạy cho MANUAL control
         vTaskDelay(pdMS_TO_TICKS(50));

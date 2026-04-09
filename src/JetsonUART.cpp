@@ -5,8 +5,8 @@
 #include "GPSSensor.h"
 #include "MotorController.h"
 
-uint8_t JetsonUART::rxBuffer[JetsonUART::RX_BUFFER_SIZE] = {0};
-DynamicJsonDocument JetsonUART::commandDoc(JetsonUART::RX_BUFFER_SIZE);
+uint8_t JetsonUART::rxBuffer[JETSON_JSON_BUFFER_SIZE] = {0};
+DynamicJsonDocument JetsonUART::commandDoc(JETSON_JSON_BUFFER_SIZE);
 OperationMode JetsonUART::lastJetsonMode = AUTONOMOUS;
 uint32_t JetsonUART::lastCommandMillis = 0;
 bool JetsonUART::commandPending = false;
@@ -46,14 +46,14 @@ bool JetsonUART::checkForCommands() {
             return true;
         }
 
-        if (rxWriteIndex < (RX_BUFFER_SIZE - 1)) {
+        if (rxWriteIndex < (JETSON_JSON_BUFFER_SIZE - 1)) {
             rxBuffer[rxWriteIndex++] = static_cast<uint8_t>(ch);
         } else {
             // Keep the newest bytes when the line is too long.
-            memmove(rxBuffer, rxBuffer + 1, RX_BUFFER_SIZE - 2);
-            rxBuffer[RX_BUFFER_SIZE - 2] = static_cast<uint8_t>(ch);
-            rxBuffer[RX_BUFFER_SIZE - 1] = '\0';
-            rxWriteIndex = RX_BUFFER_SIZE - 1;
+            memmove(rxBuffer, rxBuffer + 1, JETSON_JSON_BUFFER_SIZE - 2);
+            rxBuffer[JETSON_JSON_BUFFER_SIZE - 2] = static_cast<uint8_t>(ch);
+            rxBuffer[JETSON_JSON_BUFFER_SIZE - 1] = '\0';
+            rxWriteIndex = JETSON_JSON_BUFFER_SIZE - 1;
             Serial.println("[UART] RX buffer full, dropped oldest byte");
         }
     }
@@ -128,12 +128,12 @@ void JetsonUART::handleJetsonCommand() {
 
 void JetsonUART::sendStatus() {
     const uint32_t now = millis();
-    if ((now - lastStatusMillis) < STATUS_INTERVAL_MS) {
+    if ((now - lastStatusMillis) < JETSON_STATUS_INTERVAL_MS) {
         return;
     }
     lastStatusMillis = now;
 
-    StaticJsonDocument<512> statusDoc;
+    StaticJsonDocument<JETSON_JSON_BUFFER_SIZE> statusDoc;
     statusDoc["type"] = "STATUS";
 
     const OperationMode mode = UltrasonicSensor::getMode();
@@ -172,7 +172,7 @@ uint32_t JetsonUART::getLastCommandTime() {
 }
 
 bool JetsonUART::isJetsonConnected() {
-    return (millis() - lastCommandMillis) <= CONNECTION_TIMEOUT_MS;
+    return (millis() - lastCommandMillis) <= JETSON_WATCHDOG_TIMEOUT_MS;
 }
 
 void JetsonUART::clearRxBuffer() {
@@ -183,5 +183,5 @@ void JetsonUART::clearRxBuffer() {
 float JetsonUART::readBatteryVoltage() {
     // GPIO35 is used by encoder in this project, so keep a safe placeholder value.
     // Replace with real ADC conversion when battery divider is wired to a free ADC pin.
-    return JETSON_BATTERY_DUMMY_VOLTAGE;
+    return 12.0f;
 }

@@ -17,11 +17,7 @@ public:
     static bool isJetsonConnected();
 
 private:
-    static constexpr size_t RX_BUFFER_SIZE = JETSON_UART_JSON_BUFFER_SIZE;
-    static constexpr uint32_t STATUS_INTERVAL_MS = JETSON_UART_STATUS_INTERVAL_MS;
-    static constexpr uint32_t CONNECTION_TIMEOUT_MS = JETSON_UART_TIMEOUT_MS;
-
-    static uint8_t rxBuffer[RX_BUFFER_SIZE];
+    static uint8_t rxBuffer[JETSON_JSON_BUFFER_SIZE];
     static DynamicJsonDocument commandDoc;
     static OperationMode lastJetsonMode;
     static uint32_t lastCommandMillis;
