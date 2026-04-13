@@ -1,0 +1,8 @@
+{
+  "port": "/dev/ttyTHS1",
+  "baudrate": 115200,
+  "timeout_sec": 0.1,
+  "write_timeout_sec": 0.2,
+  "line_ending": "\\n",
+  "reconnect_delay_sec": 1.0
+}

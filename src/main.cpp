@@ -8,6 +8,7 @@
 #include "VehicleStateMachine.h"
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
+#include "JetsonUART.h"
 
 // Task Handles để quản lý (Suspend/Resume/Monitor)
 TaskHandle_t xLogicTaskHandle = NULL;
@@ -132,8 +133,12 @@ void vAppTask(void *pvParameters) {
 
     // ── Bước 3: Khởi tạo CommandProcessor ──
     CommandProcessor::begin();
+    JetsonUART::begin();
 
     Serial.println("[APP] AppTask ready.");
+
+    static uint32_t lastStatusSend = 0;
+    bool jetsonTimeoutLogged = false;
 
     for (;;) {
         // Kiểm tra WiFi, tự reconnect với exponential backoff
@@ -153,6 +158,30 @@ void vAppTask(void *pvParameters) {
         if (!NetworkManager::wsConnected()) {
             CommandProcessor::pollCommands();
             CommandProcessor::pollMode();  // Sync mode với database
+        }
+
+        // NEW: Jetson UART check
+        if (JetsonUART::checkForCommands()) {
+            JetsonUART::handleJetsonCommand();
+            Serial.println("[JETSON] Command executed");
+            jetsonTimeoutLogged = false;
+        }
+
+        // Periodic status send
+        if (millis() - lastStatusSend > JETSON_STATUS_INTERVAL_MS) {
+            JetsonUART::sendStatus();
+            lastStatusSend = millis();
+        }
+
+        // Jetson watchdog fallback (once per timeout)
+        if (!JetsonUART::isJetsonConnected()) {
+            if (!jetsonTimeoutLogged) {
+                UltrasonicSensor::setMode(AUTONOMOUS);
+                Serial.println("[JETSON] Timeout - falling back to AUTONOMOUS");
+                jetsonTimeoutLogged = true;
+            }
+        } else {
+            jetsonTimeoutLogged = false;
         }
 
         // Flush GPS queue khi mạng lại
