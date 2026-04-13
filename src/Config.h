@@ -41,8 +41,8 @@
 
 /* ================== ULTRASONIC - 4 ================== */
 // Front - center
-#define TRIG_FRONT 16
-#define ECHO_FRONT 17
+#define TRIG_FRONT 12
+#define ECHO_FRONT 39
 // Front - right
 #define TRIG_RIGHT  13
 #define ECHO_RIGHT  14
@@ -69,8 +69,8 @@
 #define GPS_BAUD   9600
 
 /* ================== JETSON UART (Serial1) ================== */
-#define ROS_RX_PIN                  39      // ESP32 input from Jetson TX
-#define ROS_TX_PIN                  15      // ESP32 output to Jetson RX
+#define ROS_RX_PIN                  16      // ESP32 input from Jetson TX
+#define ROS_TX_PIN                  17      // ESP32 output to Jetson RX
 #define JETSON_UART_BAUD            115200
 #define JETSON_STATUS_INTERVAL_MS   500     // Send status every 500ms
 #define JETSON_WATCHDOG_TIMEOUT_MS  3000    // Fallback if no cmd for 3sec
