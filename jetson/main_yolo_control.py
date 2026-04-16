@@ -284,11 +284,11 @@ def run(args: argparse.Namespace) -> int:
                     tracked_obj = select_same_object(tracking.obj, detections) if inference_ok else tracking.obj
                     if inference_ok and tracked_obj is None:
                         LOGGER.info("STATE TRANSITION: TRACKING -> SAFE | reason=object_lost")
-                        if bridge.send_autonomous():
+                        if bridge.send_forward(reason="object_lost"):
                             mode = Mode.PATROL
                             tracking = None
                         else:
-                            LOGGER.warning("Failed to send AUTONOMOUS after object_lost")
+                            LOGGER.warning("Failed to send FORWARD after object_lost")
                     else:
                         if tracked_obj is not None:
                             tracking.obj = tracked_obj
@@ -315,20 +315,20 @@ def run(args: argparse.Namespace) -> int:
                                 LOGGER.info(
                                     "STATE TRANSITION: TRACKING -> SAFE | reason=interacting>=10s"
                                 )
-                                if bridge.send_autonomous():
+                                if bridge.send_forward(reason="interacting_safe"):
                                     mode = Mode.PATROL
                                     tracking = None
                                 else:
-                                    LOGGER.warning("Failed to send AUTONOMOUS for interacting safe")
+                                    LOGGER.warning("Failed to send FORWARD for interacting safe")
                             elif (not interacting) and tracking.t_human >= T_HUMAN_NEAR_SAFE:
                                 LOGGER.info(
                                     "STATE TRANSITION: TRACKING -> SAFE | reason=person_near>=30s"
                                 )
-                                if bridge.send_autonomous():
+                                if bridge.send_forward(reason="person_near_safe"):
                                     mode = Mode.PATROL
                                     tracking = None
                                 else:
-                                    LOGGER.warning("Failed to send AUTONOMOUS for near safe")
+                                    LOGGER.warning("Failed to send FORWARD for near safe")
 
                 if tracking is not None and (now - last_timer_log) >= 1.0:
                     LOGGER.info(
@@ -349,7 +349,7 @@ def run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         LOGGER.info("Ctrl+C received, shutting down")
         if tracking is None or (tracking is not None and not tracking.alert_sent):
-            bridge.send_autonomous()
+            bridge.send_forward(reason="shutdown_resume")
     finally:
         cap.release()
         cv2.destroyAllWindows()

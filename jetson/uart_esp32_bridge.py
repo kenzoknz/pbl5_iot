@@ -45,14 +45,6 @@ class ESP32Bridge:
             "cmd": "",
             "timestamp": 0,
         }
-        self._manual_template: Dict[str, Any] = {
-            "type": "COMMAND",
-            "cmd": "MANUAL",
-            "throttle": 0,
-            "steering": 90,
-            "duration_ms": 100,
-            "timestamp": 0,
-        }
 
         self.connect()
 
@@ -112,9 +104,17 @@ class ESP32Bridge:
             return False
 
     def send_command(self, cmd_type: str, **kwargs: Any) -> bool:
-        """Build and send standard COMMAND frame."""
+        """Build and send STOP/FORWARD command frame."""
+        cmd = str(cmd_type).upper()
+        if cmd == "AUTONOMOUS":
+            cmd = "FORWARD"
+
+        if cmd not in {"STOP", "FORWARD"}:
+            LOGGER.warning("Blocked command '%s' (allowed: STOP/FORWARD)", cmd_type)
+            return False
+
         payload = dict(self._command_template)
-        payload["cmd"] = str(cmd_type).upper()
+        payload["cmd"] = cmd
         payload["timestamp"] = int(time.time())
         payload.update(kwargs)
 
@@ -129,23 +129,12 @@ class ESP32Bridge:
     def send_stop(self, reason: str, confidence: float = 1.0) -> bool:
         return self.send_command("STOP", reason=reason, confidence=float(confidence))
 
+    def send_forward(self, reason: str = "path_clear") -> bool:
+        return self.send_command("FORWARD", reason=reason)
+
     def send_autonomous(self, mode: str = "obstacle_avoidance") -> bool:
-        return self.send_command("AUTONOMOUS", mode=mode)
-
-    def send_manual(self, throttle: int, steering: int, duration_ms: int = 100) -> bool:
-        frame = dict(self._manual_template)
-        frame["throttle"] = max(0, min(255, int(throttle)))
-        frame["steering"] = max(55, min(125, int(steering)))
-        frame["duration_ms"] = max(10, int(duration_ms))
-        frame["timestamp"] = int(time.time())
-
-        try:
-            encoded = json.dumps(frame, separators=(",", ":"), ensure_ascii=True)
-        except (TypeError, ValueError) as exc:
-            LOGGER.error("Cannot encode MANUAL payload: %s", exc)
-            return False
-
-        return self.send_raw(encoded)
+        """Backward-compatible alias for old callers."""
+        return self.send_forward(reason=f"alias:{mode}")
 
     def read_status(self) -> Optional[Dict[str, Any]]:
         """Read one status line in non-blocking mode.
@@ -197,7 +186,7 @@ if __name__ == "__main__":
     if bridge.send_stop("person_detected", confidence=0.95):
         print("Stop command sent")
         time.sleep(2)
-        bridge.send_autonomous()
+        bridge.send_forward(reason="demo_resume")
 
     # Try reading one status frame.
     status = bridge.read_status()

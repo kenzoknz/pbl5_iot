@@ -58,9 +58,7 @@ class ESP32Bridge:
 def main():
     parser = argparse.ArgumentParser(description="Jetson <-> ESP32 UART bridge")
     parser.add_argument("--config", default=str(CONFIG_PATH), help="Path to UART config JSON")
-    parser.add_argument("--cmd", choices=["STOP", "AUTONOMOUS", "MANUAL"], help="Command to send")
-    parser.add_argument("--throttle", type=int, default=0, help="Throttle for MANUAL (0-255)")
-    parser.add_argument("--steering", type=int, default=90, help="Steering for MANUAL (55-125)")
+    parser.add_argument("--cmd", choices=["STOP", "FORWARD"], help="Command to send")
     parser.add_argument("--listen", action="store_true", help="Listen status from ESP32")
     parser.add_argument("--listen-seconds", type=float, default=3.0, help="How long to listen")
 
@@ -77,12 +75,8 @@ def main():
     try:
         if args.cmd == "STOP":
             bridge.send_command("STOP")
-        elif args.cmd == "AUTONOMOUS":
-            bridge.send_command("AUTONOMOUS")
-        elif args.cmd == "MANUAL":
-            throttle = max(0, min(255, args.throttle))
-            steering = max(55, min(125, args.steering))
-            bridge.send_command("MANUAL", throttle=throttle, steering=steering)
+        elif args.cmd == "FORWARD":
+            bridge.send_command("FORWARD")
 
         if args.listen:
             t0 = time.time()
