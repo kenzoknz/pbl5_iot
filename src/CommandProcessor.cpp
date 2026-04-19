@@ -333,7 +333,7 @@ void CommandProcessor::sendConfigCurrent(const char* source) {
     JsonObject data = doc.createNestedObject("data");
     appendConfigToJson(data, cfg);
     data["source"] = source ? source : (ConfigStorage::isCurrentFromNvs() ? "nvs" : "default");
-    data["timestamp"] = millis();
+    data["uptime_ms"] = millis();
 
     String out;
     serializeJson(doc, out);
