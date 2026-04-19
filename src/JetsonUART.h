@@ -15,17 +15,20 @@ public:
     static void sendStatus();
     static uint32_t getLastCommandTime();
     static bool isJetsonConnected();
+    static bool isStopHoldActive();
+    static void clearStopHold();
 
 private:
     static uint8_t rxBuffer[JETSON_JSON_BUFFER_SIZE];
     static DynamicJsonDocument commandDoc;
-    static OperationMode lastJetsonMode;
     static uint32_t lastCommandMillis;
     static bool commandPending;
+    static volatile bool stopHoldActive;
 
     static size_t rxWriteIndex;
     static uint32_t lastStatusMillis;
 
+    static void engageStopHold();
     static void clearRxBuffer();
     static float readBatteryVoltage();
 };
