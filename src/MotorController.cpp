@@ -15,6 +15,7 @@ int MotorController::steerServoAngle = 90;
 int MotorController::targetSteerServoAngle = 90;
 int MotorController::leftMotorSpeed = 0;
 int MotorController::rightMotorSpeed = 0;
+RobotConfig MotorController::runtimeConfig = ConfigStorage::getDefaults();
 
 bool  MotorController::pidEnabled   = false;
 float MotorController::pidIntegral  = 0;
@@ -101,23 +102,23 @@ void MotorController::limitSpeedBySteering() {
     // TĂNG tốc độ khi cua gắt để thắng ma sát
     // Góc 100-130° (deviation 10-40°) cần tốc độ cao
     if (deviation > 35) {  // Cua RẤT GẮT (góc > 125° hoặc < 55°)
-        if (targetSpeed > 0 && targetSpeed < SHARP_TURN_BOOST) {
-            targetSpeed = SHARP_TURN_BOOST;  // 160 - Tốc độ max để kéo nổi
+        if (targetSpeed > 0 && targetSpeed < runtimeConfig.sharpTurnBoost) {
+            targetSpeed = runtimeConfig.sharpTurnBoost;
         }
     } 
     else if (deviation > 25) {  // Cua GẮT (góc 115-125° hoặc 55-65°)
-        if (targetSpeed > 0 && targetSpeed < 150) {
-            targetSpeed = MEDIUM_TURN_BOOST;  // Tốc độ cao
+        if (targetSpeed > 0 && targetSpeed < runtimeConfig.mediumTurnBoost) {
+            targetSpeed = runtimeConfig.mediumTurnBoost;
         }
     }
     else if (deviation > 15) {  // Cua VỪA (góc 105-115° hoặc 65-75°)
-        if (targetSpeed > 0 && targetSpeed < TURN_BOOST) {
-            targetSpeed = TURN_BOOST;  // 145
+        if (targetSpeed > 0 && targetSpeed < runtimeConfig.turnBoost) {
+            targetSpeed = runtimeConfig.turnBoost;
         }
     }
     else if (deviation > 10) {  // Cua NHẸ (góc 100-105° hoặc 75-80°)
-        if (targetSpeed > 0 && targetSpeed < 135) {
-            targetSpeed = LIGHT_TURN_BOOST;
+        if (targetSpeed > 0 && targetSpeed < runtimeConfig.lightTurnBoost) {
+            targetSpeed = runtimeConfig.lightTurnBoost;
         }
     }
     // Nếu cua < 10° thì giữ nguyên targetSpeed (chạy thẳng)
@@ -212,10 +213,10 @@ void MotorController::smoothSpeedTransition() {
     xSemaphoreTake(motorMutex, portMAX_DELAY);
     int step = 18;  // 12 -> 18: tăng tốc nhanh hơn khi cua
 
-    if (targetSpeed > 0 && targetSpeed < MIN_RUN_SPEED)
-        targetSpeed = MIN_RUN_SPEED;
-    if (targetSpeed < 0 && targetSpeed > -MIN_RUN_SPEED)
-        targetSpeed = -MIN_RUN_SPEED;
+    if (targetSpeed > 0 && targetSpeed < runtimeConfig.minRunSpeed)
+        targetSpeed = runtimeConfig.minRunSpeed;
+    if (targetSpeed < 0 && targetSpeed > -(int)runtimeConfig.minRunSpeed)
+        targetSpeed = -(int)runtimeConfig.minRunSpeed;
 
     if (targetSpeed == 0) {
         currentSpeed = 0;
@@ -252,6 +253,23 @@ void MotorController::smoothSpeedTransition() {
     }
 
     xSemaphoreGive(motorMutex);
+}
+
+void MotorController::applyConfig(const RobotConfig& cfg) {
+    if (!ConfigStorage::isValidConfig(cfg)) {
+        Serial.println("[MOTOR] Reject applyConfig: invalid values");
+        return;
+    }
+
+    if (motorMutex != nullptr) {
+        xSemaphoreTake(motorMutex, portMAX_DELAY);
+    }
+    runtimeConfig = cfg;
+    if (motorMutex != nullptr) {
+        xSemaphoreGive(motorMutex);
+    }
+
+    Serial.println("[MOTOR] Runtime config applied");
 }
 
 // ========== DIFFERENTIAL STEERING ==========

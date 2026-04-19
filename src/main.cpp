@@ -9,6 +9,7 @@
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
 #include "JetsonUART.h"
+#include "ConfigStorage.h"
 
 // Task Handles để quản lý (Suspend/Resume/Monitor)
 TaskHandle_t xLogicTaskHandle = NULL;
@@ -40,6 +41,20 @@ void setup() {
     }
     GPSSensor::begin();
     VehicleStateMachine::begin();
+
+    // Load persisted config from NVS flash (fallback to defaults if empty).
+    ConfigStorage::begin();
+    RobotConfig cfg;
+    if (ConfigStorage::load(cfg)) {
+        VehicleStateMachine::applyConfig(cfg);
+        MotorController::applyConfig(cfg);
+        Serial.println("[MAIN] Loaded config from NVS flash");
+    } else {
+        VehicleStateMachine::applyConfig(cfg);
+        MotorController::applyConfig(cfg);
+        Serial.println("[MAIN] Using default config from Config.h");
+    }
+    ConfigStorage::printConfig(cfg, "[MAIN]");
     
     // Init GPS queue
     GpsQueue::begin();
