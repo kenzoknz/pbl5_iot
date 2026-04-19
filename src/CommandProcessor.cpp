@@ -27,6 +27,24 @@ void appendConfigToJson(JsonObject obj, const RobotConfig& cfg) {
     obj["backDangerDistance"] = cfg.backDangerDistance;
     obj["directionHysteresis"] = cfg.directionHysteresis;
 }
+
+const char* stateToName(State state) {
+    switch (state) {
+        case INIT: return "INIT";
+        case NORMAL: return "NORMAL";
+        case SLOW: return "SLOW";
+        case AVOID_LEFT: return "AVOID_LEFT";
+        case AVOID_RIGHT: return "AVOID_RIGHT";
+        case TURN_LEFT: return "TURN_LEFT";
+        case TURN_RIGHT: return "TURN_RIGHT";
+        case BACKING: return "BACKING";
+        case STOP: return "STOP";
+        case EMERGENCY: return "EMERGENCY";
+        case MANUAL_CONTROL: return "MANUAL";
+        case ESCAPE: return "ESCAPE";
+        default: return "UNKNOWN";
+    }
+}
 }
 
 // ── Static member definitions ──────────────────────────────────
@@ -351,8 +369,10 @@ void CommandProcessor::sendStatusUpdate() {
     StaticJsonDocument<640> doc;
     doc["type"] = "STATUS";
     JsonObject data = doc.createNestedObject("data");
+    State currentState = VehicleStateMachine::getCurrentState();
     data["mode"]    = (_mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
-    data["state"]   = (int)VehicleStateMachine::getCurrentState();
+    data["state"]   = stateToName(currentState);
+    data["stateCode"] = (int)currentState;
     data["rssi"]    = WiFi.RSSI();
     data["uptime"]  = millis() / 1000;
 
@@ -654,9 +674,11 @@ void CommandProcessor::setMode(OperationMode mode) {
 
     // Thông báo lên server qua WebSocket
     StaticJsonDocument<128> doc;
+    State currentState = VehicleStateMachine::getCurrentState();
     doc["type"]           = "STATUS";
     doc["data"]["mode"]   = (mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
-    doc["data"]["state"]  = (int)VehicleStateMachine::getCurrentState();
+    doc["data"]["state"]  = stateToName(currentState);
+    doc["data"]["stateCode"] = (int)currentState;
     String msg;
     serializeJson(doc, msg);
     NetworkManager::wsSend(msg);
