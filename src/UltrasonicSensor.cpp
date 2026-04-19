@@ -9,7 +9,6 @@ TaskHandle_t UltrasonicSensor::backTaskHandle       = NULL;
 OperationMode UltrasonicSensor::currentMode = OperationMode::AUTONOMOUS;
 volatile bool UltrasonicSensor::tasksEnabled = true;
 
-
 // ================== BUFFERS ==================
 static long frontBuffer[BUFFER_SIZE] = {999, 999, 999};
 static long rightBuffer[BUFFER_SIZE] = {999, 999, 999};
