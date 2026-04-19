@@ -18,6 +18,7 @@ State VehicleStateMachine::lastTurnDirection    = NORMAL;
 unsigned long VehicleStateMachine::trapStartTime  = 0;
 unsigned long VehicleStateMachine::lastNormalTime = 0;
 bool  VehicleStateMachine::escapeMode           = false;
+RobotConfig VehicleStateMachine::runtimeConfig  = ConfigStorage::getDefaults();
 
 // ══════════════════════════════════════════════════════════════
 // TÍNH TỐC ĐỘ THÔNG MINH DỰA TRÊN CẢM BIẾN + ENCODER
@@ -27,27 +28,27 @@ bool  VehicleStateMachine::escapeMode           = false;
 //   2. Khoảng cách 2 bên (hẹp → chậm)
 //   3. Tốc độ thực tế từ encoder (đang nhanh quá → giảm)
 // ══════════════════════════════════════════════════════════════
-static int calculateAdaptiveSpeed(long front, long right, long left) {
+static int calculateAdaptiveSpeed(long front, long right, long left, const RobotConfig& cfg) {
     // ── 1. Tốc độ base theo khoảng cách phía trước ──
     int baseSpeed;
-    if (front > PREPARE_DISTANCE) {
-        baseSpeed = CRUISE_SPEED;  // Đường rộng
-    } else if (front > TURN_DISTANCE) {
+    if (front > cfg.prepareDistance) {
+        baseSpeed = cfg.cruiseSpeed;  // Đường rộng
+    } else if (front > cfg.turnDistance) {
         // Nội suy tuyến tính: PREPARE → TURN distance
         // CRUISE_SPEED → MIN_RUN_SPEED
-        float ratio = (float)(front - TURN_DISTANCE)
-                    / (float)(PREPARE_DISTANCE - TURN_DISTANCE);
-        baseSpeed = MIN_RUN_SPEED + (int)(ratio * (CRUISE_SPEED - MIN_RUN_SPEED));
+        float ratio = (float)(front - cfg.turnDistance)
+                    / (float)(cfg.prepareDistance - cfg.turnDistance);
+        baseSpeed = cfg.minRunSpeed + (int)(ratio * (cfg.cruiseSpeed - cfg.minRunSpeed));
     } else {
-        baseSpeed = MIN_RUN_SPEED;
+        baseSpeed = cfg.minRunSpeed;
     }
 
     // ── 2. Giảm tốc nếu 2 bên hẹp (hành lang chật) ──
     int minSide = min(right, left);
-    if (minSide < SIDE_DANGER_DIST) {
+    if (minSide < cfg.sideDangerDist) {
         // Hành lang hẹp → giảm thêm 20%
         baseSpeed = baseSpeed * 80 / 100;
-        if (baseSpeed < MIN_RUN_SPEED) baseSpeed = MIN_RUN_SPEED;
+        if (baseSpeed < cfg.minRunSpeed) baseSpeed = cfg.minRunSpeed;
     }
 
     return baseSpeed;
@@ -64,8 +65,8 @@ static int calculateAdaptiveSpeed(long front, long right, long left) {
 // ══════════════════════════════════════════════════════════════
 State VehicleStateMachine::decideDirection(long front, long right, long left, long back) {
     // ── P1: Phía trước rộng → tiếp tục đi ──
-    if (front > TURN_DISTANCE) {
-        if (front > PREPARE_DISTANCE) return NORMAL;
+    if (front > runtimeConfig.turnDistance) {
+        if (front > runtimeConfig.prepareDistance) return NORMAL;
         return SLOW;
     }
 
@@ -73,26 +74,26 @@ State VehicleStateMachine::decideDirection(long front, long right, long left, lo
     // Hysteresis tránh dao động khi Left ≈ Right
     long diff = left - right;  // dương = trái rộng hơn
 
-    if (diff > DIRECTION_HYSTERESIS && left > SIDE_DANGER_DIST) {
+    if (diff > runtimeConfig.directionHysteresis && left > runtimeConfig.sideDangerDist) {
         // Trái rộng hơn rõ ràng
         return TURN_LEFT;
     }
-    if (diff < -DIRECTION_HYSTERESIS && right > SIDE_DANGER_DIST) {
+    if (diff < -runtimeConfig.directionHysteresis && right > runtimeConfig.sideDangerDist) {
         // Phải rộng hơn rõ ràng
         return TURN_RIGHT;
     }
 
     // Chênh lệch nhỏ (|diff| <= HYSTERESIS) — chọn bên nào rộng hơn
-    if (left > SIDE_DANGER_DIST && right > SIDE_DANGER_DIST) {
+    if (left > runtimeConfig.sideDangerDist && right > runtimeConfig.sideDangerDist) {
         // Cả hai đều đủ rộng → chọn bên xa hơn, ưu tiên hướng cũ nếu bằng nhau
         if (left >= right) return TURN_LEFT;
         return TURN_RIGHT;
     }
-    if (left > SIDE_DANGER_DIST) return TURN_LEFT;
-    if (right > SIDE_DANGER_DIST) return TURN_RIGHT;
+    if (left > runtimeConfig.sideDangerDist) return TURN_LEFT;
+    if (right > runtimeConfig.sideDangerDist) return TURN_RIGHT;
 
     // ── P3: Cả hai bên đều hẹp → LÙI ──
-    if (back > BACK_DANGER_DISTANCE) {
+    if (back > runtimeConfig.backDangerDistance) {
         return BACKING;
     }
 
@@ -167,8 +168,8 @@ void VehicleStateMachine::resetTrapCounters() {
 State VehicleStateMachine::decideEscapeDirection(long right, long left, long back) {
     // Ưu tiên: bên nào rộng hơn → xoay về bên đó
     // Nếu bằng nhau → xoay ngược hướng rẽ cuối (phá vòng lặp)
-    if (left > right + DIRECTION_HYSTERESIS) return TURN_LEFT;
-    if (right > left + DIRECTION_HYSTERESIS) return TURN_RIGHT;
+    if (left > right + runtimeConfig.directionHysteresis) return TURN_LEFT;
+    if (right > left + runtimeConfig.directionHysteresis) return TURN_RIGHT;
 
     // Bằng nhau → ngược hướng cũ
     if (lastTurnDirection == TURN_RIGHT) return TURN_LEFT;
@@ -184,6 +185,16 @@ void VehicleStateMachine::begin() {
     lastNormalTime = millis();
     resetTrapCounters();
     Serial.println("[FSM] State Machine initialized: NORMAL");
+}
+
+void VehicleStateMachine::applyConfig(const RobotConfig& cfg) {
+    if (!ConfigStorage::isValidConfig(cfg)) {
+        Serial.println("[FSM] Reject applyConfig: invalid values");
+        return;
+    }
+
+    runtimeConfig = cfg;
+    Serial.println("[FSM] Runtime config applied");
 }
 
 void VehicleStateMachine::update() {
@@ -206,7 +217,7 @@ void VehicleStateMachine::update() {
         MotorController::stopMotor();
         // Thử lùi thay vì dừng hẳn
         long back = UltrasonicSensor::getBackDistance();
-        if (back > BACK_DANGER_DISTANCE) {
+        if (back > runtimeConfig.backDangerDistance) {
             currentState = BACKING;
             stateStartTime = millis();
              EncoderSensor::resetDistance();  // [FIX] Reset trước khi lùi
@@ -247,7 +258,7 @@ void VehicleStateMachine::update() {
     }
 
     // 3. DỪNG KHẨN CẤP NẾU PHÍA TRƯỚC QUÁ GẦN
-    if (front <= EMERGENCY_DIST && currentState != BACKING &&
+    if (front <= runtimeConfig.emergencyDist && currentState != BACKING &&
         currentState != STOP && currentState != EMERGENCY &&
         currentState != ESCAPE ) {
         MotorController::stopMotor();
@@ -581,24 +592,24 @@ void VehicleStateMachine::handleNormalState(long front, long right, long left) {
     lastNormalTime = millis();
     resetTrapCounters();
 
-    int speed = calculateAdaptiveSpeed(front, right, left);
+    int speed = calculateAdaptiveSpeed(front, right, left, runtimeConfig);
     MotorController::setTargetSpeed(speed);
     MotorController::setTargetSteerServoAngle(90);
 
     // Cảm biến bên — né nhẹ
-    if (right < SIDE_DANGER_DIST && left >= SIDE_DANGER_DIST) {
+    if (right < runtimeConfig.sideDangerDist && left >= runtimeConfig.sideDangerDist) {
         currentState = AVOID_LEFT;
         Serial.printf("[FSM] NORMAL->AVOID_LEFT (R=%ld)\n", right);
         return;
     }
-    if (left < SIDE_DANGER_DIST && right >= SIDE_DANGER_DIST) {
+    if (left < runtimeConfig.sideDangerDist && right >= runtimeConfig.sideDangerDist) {
         currentState = AVOID_RIGHT;
         Serial.printf("[FSM] NORMAL->AVOID_RIGHT (L=%ld)\n", left);
         return;
     }
 
     // Phía trước có vật cản
-    if (front <= SLOW_DISTANCE) {
+    if (front <= runtimeConfig.slowDistance) {
         long back = UltrasonicSensor::getBackDistance();
         State nextState = decideDirection(front, right, left, back);
         updateTrapDetection(nextState);
@@ -607,23 +618,25 @@ void VehicleStateMachine::handleNormalState(long front, long right, long left) {
         Serial.printf("[FSM] NORMAL->%d (F=%ld R=%ld L=%ld)\n",
                       nextState, front, right, left);
     }
-    else if (front <= PREPARE_DISTANCE) {
+    else if (front <= runtimeConfig.prepareDistance) {
         currentState = SLOW;
     }
 }
 
 void VehicleStateMachine::handleSlowState(long front, long right, long left) {
-    int speed = calculateAdaptiveSpeed(front, right, left);
+    int speed = calculateAdaptiveSpeed(front, right, left, runtimeConfig);
     MotorController::setTargetSpeed(speed);
     MotorController::setTargetSteerServoAngle(90);
 
-    if (front > PREPARE_DISTANCE && right > SIDE_DANGER_DIST && left > SIDE_DANGER_DIST) {
+    if (front > runtimeConfig.prepareDistance
+        && right > runtimeConfig.sideDangerDist
+        && left > runtimeConfig.sideDangerDist) {
         currentState = NORMAL;
         Serial.println("[FSM] SLOW->NORMAL");
         return;
     }
 
-    if (front <= STOP_DISTANCE) {
+    if (front <= runtimeConfig.stopDistance) {
         long back = UltrasonicSensor::getBackDistance();
         State nextState = decideDirection(front, right, left, back);
         updateTrapDetection(nextState);
@@ -635,25 +648,25 @@ void VehicleStateMachine::handleSlowState(long front, long right, long left) {
     }
 
     // Cảm biến bên
-    if (right < SIDE_DANGER_DIST) {
+    if (right < runtimeConfig.sideDangerDist) {
         currentState = AVOID_LEFT;
-    } else if (left < SIDE_DANGER_DIST) {
+    } else if (left < runtimeConfig.sideDangerDist) {
         currentState = AVOID_RIGHT;
     }
 }
 
 void VehicleStateMachine::handleAvoidLeftState(long front, long right, long left) {
-    int speed = calculateAdaptiveSpeed(front, right, left);
+    int speed = calculateAdaptiveSpeed(front, right, left, runtimeConfig);
     MotorController::setTargetSpeed(speed);
     MotorController::setTargetSteerServoAngle(110);
 
-    if (right > TURN_DISTANCE) {
-        currentState = (front > PREPARE_DISTANCE) ? NORMAL : SLOW;
+    if (right > runtimeConfig.turnDistance) {
+        currentState = (front > runtimeConfig.prepareDistance) ? NORMAL : SLOW;
         Serial.printf("[FSM] AVOID_LEFT->%d\n", currentState);
         return;
     }
 
-    if (front <= STOP_DISTANCE) {
+    if (front <= runtimeConfig.stopDistance) {
         long back = UltrasonicSensor::getBackDistance();
         State nextState = decideDirection(front, right, left, back);
         updateTrapDetection(nextState);
@@ -662,8 +675,8 @@ void VehicleStateMachine::handleAvoidLeftState(long front, long right, long left
         return;
     }
 
-    if (left < SIDE_DANGER_DIST) {
-        if (front > SLOW_DISTANCE) {
+    if (left < runtimeConfig.sideDangerDist) {
+        if (front > runtimeConfig.slowDistance) {
             MotorController::setTargetSteerServoAngle(90);
             currentState = SLOW;
         } else {
@@ -677,17 +690,17 @@ void VehicleStateMachine::handleAvoidLeftState(long front, long right, long left
 }
 
 void VehicleStateMachine::handleAvoidRightState(long front, long right, long left) {
-    int speed = calculateAdaptiveSpeed(front, right, left);
+    int speed = calculateAdaptiveSpeed(front, right, left, runtimeConfig);
     MotorController::setTargetSpeed(speed);
     MotorController::setTargetSteerServoAngle(70);
 
-    if (left > TURN_DISTANCE) {
-        currentState = (front > PREPARE_DISTANCE) ? NORMAL : SLOW;
+    if (left > runtimeConfig.turnDistance) {
+        currentState = (front > runtimeConfig.prepareDistance) ? NORMAL : SLOW;
         Serial.printf("[FSM] AVOID_RIGHT->%d\n", currentState);
         return;
     }
 
-    if (front <= STOP_DISTANCE) {
+    if (front <= runtimeConfig.stopDistance) {
         long back = UltrasonicSensor::getBackDistance();
         State nextState = decideDirection(front, right, left, back);
         updateTrapDetection(nextState);
@@ -696,8 +709,8 @@ void VehicleStateMachine::handleAvoidRightState(long front, long right, long lef
         return;
     }
 
-    if (right < SIDE_DANGER_DIST) {
-        if (front > SLOW_DISTANCE) {
+    if (right < runtimeConfig.sideDangerDist) {
+        if (front > runtimeConfig.slowDistance) {
             MotorController::setTargetSteerServoAngle(90);
             currentState = SLOW;
         } else {
@@ -711,12 +724,12 @@ void VehicleStateMachine::handleAvoidRightState(long front, long right, long lef
 }
 
 void VehicleStateMachine::handleTurnLeftState(long front, long right, long left, long back, unsigned long now) {
-    MotorController::setTargetSpeed(TURN_BOOST);
+    MotorController::setTargetSpeed(runtimeConfig.turnBoost);
     MotorController::setTargetSteerServoAngle(135);
     turnRight = false;
 
     // Thoát thành công
-    if (front > TURN_DISTANCE && left > SIDE_DANGER_DIST) {
+    if (front > runtimeConfig.turnDistance && left > runtimeConfig.sideDangerDist) {
         currentState = NORMAL;
         Serial.println("[FSM] TURN_LEFT->NORMAL");
         return;
@@ -733,11 +746,11 @@ void VehicleStateMachine::handleTurnLeftState(long front, long right, long left,
 }
 
 void VehicleStateMachine::handleTurnRightState(long front, long right, long left, long back, unsigned long now) {
-    MotorController::setTargetSpeed(TURN_BOOST);
+    MotorController::setTargetSpeed(runtimeConfig.turnBoost);
     MotorController::setTargetSteerServoAngle(45);
     turnRight = true;
 
-    if (front > TURN_DISTANCE && right > SIDE_DANGER_DIST) {
+    if (front > runtimeConfig.turnDistance && right > runtimeConfig.sideDangerDist) {
         currentState = NORMAL;
         Serial.println("[FSM] TURN_RIGHT->NORMAL");
         return;
@@ -753,14 +766,14 @@ void VehicleStateMachine::handleTurnRightState(long front, long right, long left
 }
 
 void VehicleStateMachine::handleBackingState(long back, unsigned long now) {
-    if (back <= BACK_DANGER_DISTANCE) {
+    if (back <= runtimeConfig.backDangerDistance) {
         MotorController::stopMotor();
         currentState = STOP;
         Serial.println("[FSM] BACKING->STOP (sau bi chan)");
         return;
     }
 
-    MotorController::setTargetSpeed(-BACK_SPEED);
+    MotorController::setTargetSpeed(-runtimeConfig.backSpeed);
     // [MỚI] Khi lùi, bẻ nhẹ servo để thay đổi góc tiếp cận
     // Ngược hướng rẽ cuối → tránh lùi vào cùng chỗ cũ
     if (lastTurnDirection == TURN_RIGHT) {
@@ -799,8 +812,8 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
     unsigned long elapsed = now - stateStartTime;
 
     // ── Thoát thành công? ──
-    if (front > TURN_DISTANCE &&
-        (left > SIDE_DANGER_DIST || right > SIDE_DANGER_DIST)) {
+    if (front > runtimeConfig.turnDistance
+        && (left > runtimeConfig.sideDangerDist || right > runtimeConfig.sideDangerDist)) {
         Serial.println("[FSM] ESCAPE SUCCESS -> NORMAL");
         currentState = NORMAL;
         resetTrapCounters();
@@ -809,8 +822,8 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
 
     // ── Phase 1: LÙI (0 → 1500ms) ──
     if (elapsed < PHASE_ESCAPE_MS) {
-        if (back > BACK_DANGER_DISTANCE) {
-            MotorController::setTargetSpeed(-BACK_SPEED);
+        if (back > runtimeConfig.backDangerDistance) {
+            MotorController::setTargetSpeed(-runtimeConfig.backSpeed);
             // Lùi + bẻ lái ngược hướng cũ
             State escapeDir = decideEscapeDirection(right, left, back);
             if (escapeDir == TURN_LEFT) {
@@ -828,7 +841,7 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
     // ── Phase 2: XOAY MẠNH (1500ms → ESCAPE_TURN_TIME_MS + 1500ms) ──
     if (elapsed < PHASE_ESCAPE_MS + ESCAPE_TURN_TIME_MS) {
         State escapeDir = decideEscapeDirection(right, left, back);
-        MotorController::setTargetSpeed(ESCAPE_SPEED);
+        MotorController::setTargetSpeed(runtimeConfig.escapeSpeed);
 
         if (escapeDir == TURN_LEFT) {
             MotorController::setTargetSteerServoAngle(120); // Xoay trái tối đa
@@ -842,11 +855,11 @@ void VehicleStateMachine::handleEscapeState(long front, long right, long left, l
     // Đánh giá lại tình hình
     MotorController::stopMotor();
 
-    if (front > SLOW_DISTANCE) {
+    if (front > runtimeConfig.slowDistance) {
         currentState = SLOW;
         resetTrapCounters();
         Serial.println("[FSM] ESCAPE->SLOW");
-    } else if (back > BACK_DANGER_DISTANCE) {
+    } else if (back > runtimeConfig.backDangerDistance) {
         // Thử lùi thêm 1 lần
         currentState = BACKING;
         stateStartTime = now;

@@ -2,12 +2,15 @@
 #define VEHICLE_STATE_MACHINE_H
 
 #include "Config.h"
+#include "ConfigStorage.h"
 
 class VehicleStateMachine {
 public:
     static void begin();
     static void update();
     static void debugOutput();
+    static void applyConfig(const RobotConfig& cfg);
+    static RobotConfig getConfig() { return runtimeConfig; }
     static State getCurrentState() { 
         return currentState; }
     
@@ -27,6 +30,7 @@ private:
     static unsigned long trapStartTime;  // Thời điểm bắt đầu chuỗi tránh vật cản
     static unsigned long lastNormalTime; // Lần cuối ở trạng thái NORMAL
     static bool  escapeMode;             // Đang trong chế độ thoát bẫy
+    static RobotConfig runtimeConfig;
 
     // ══════ Thresholds ══════
     static const int       MAX_OSCILLATIONS    = 3;    // Sau 3 lần đổi hướng → escape

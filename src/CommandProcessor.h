@@ -18,6 +18,7 @@
 #include "MotorController.h"
 #include "VehicleStateMachine.h"
 #include "GpsQueue.h"
+#include "ConfigStorage.h"
 
 // ══════════════════════════════════════════
 //  Góc servo lái — chỉnh theo xe thực tế
@@ -60,7 +61,7 @@ public:
 
     /**
      * Xử lý message JSON nhận trực tiếp từ WebSocket.
-     * Giao thức: { "type": "COMMAND" | "MODE_CHANGE" | "PING", "data": {...} }
+        * Giao thức: { "type": "COMMAND" | "MODE_CHANGE" | "PING" | "CONFIG_*", "data": {...} }
      */
     static void handleWsMessage(const String& message);
 
@@ -107,6 +108,13 @@ private:
      * @param params   JSON object chứa tham số (có thể null/empty)
      */
     static void applyManualCommand(const String& command, const JsonObject& params);
+
+    static bool parseRobotConfig(const JsonVariantConst& data, RobotConfig& out,
+                                 String& errorField, String& errorMessage);
+    static bool readBoundedUInt16(const JsonVariantConst& data, const char* key,
+                                  uint16_t minValue, uint16_t maxValue,
+                                  uint16_t& outValue, String& errorField, String& errorMessage);
+    static void sendConfigCurrent(const char* source = nullptr);
 
     // ── HTTP helpers ──
     static void markExecuted(int id);

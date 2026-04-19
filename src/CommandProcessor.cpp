@@ -6,6 +6,47 @@
 #include "CommandProcessor.h"
 #include "GPSSensor.h"
 
+namespace {
+void appendConfigToJson(JsonObject obj, const RobotConfig& cfg) {
+    obj["minRunSpeed"] = cfg.minRunSpeed;
+    obj["cruiseSpeed"] = cfg.cruiseSpeed;
+    obj["fastSpeed"] = cfg.fastSpeed;
+    obj["backSpeed"] = cfg.backSpeed;
+    obj["escapeSpeed"] = cfg.escapeSpeed;
+    obj["sharpTurnBoost"] = cfg.sharpTurnBoost;
+    obj["mediumTurnBoost"] = cfg.mediumTurnBoost;
+    obj["turnBoost"] = cfg.turnBoost;
+    obj["lightTurnBoost"] = cfg.lightTurnBoost;
+
+    obj["emergencyDist"] = cfg.emergencyDist;
+    obj["stopDistance"] = cfg.stopDistance;
+    obj["slowDistance"] = cfg.slowDistance;
+    obj["turnDistance"] = cfg.turnDistance;
+    obj["prepareDistance"] = cfg.prepareDistance;
+    obj["sideDangerDist"] = cfg.sideDangerDist;
+    obj["backDangerDistance"] = cfg.backDangerDistance;
+    obj["directionHysteresis"] = cfg.directionHysteresis;
+}
+
+const char* stateToName(State state) {
+    switch (state) {
+        case INIT: return "INIT";
+        case NORMAL: return "NORMAL";
+        case SLOW: return "SLOW";
+        case AVOID_LEFT: return "AVOID_LEFT";
+        case AVOID_RIGHT: return "AVOID_RIGHT";
+        case TURN_LEFT: return "TURN_LEFT";
+        case TURN_RIGHT: return "TURN_RIGHT";
+        case BACKING: return "BACKING";
+        case STOP: return "STOP";
+        case EMERGENCY: return "EMERGENCY";
+        case MANUAL_CONTROL: return "MANUAL";
+        case ESCAPE: return "ESCAPE";
+        default: return "UNKNOWN";
+    }
+}
+}
+
 // ── Static member definitions ──────────────────────────────────
 OperationMode CommandProcessor::_mode          = AUTONOMOUS;
 uint32_t      CommandProcessor::_lastPollTime  = 0;
@@ -167,6 +208,83 @@ void CommandProcessor::handleWsMessage(const String& message) {
     } else if (type == "PING") {
         NetworkManager::wsSend("{\"type\":\"PONG\"}");
 
+    } else if (type == "CONFIG_GET") {
+        sendConfigCurrent();
+
+    } else if (type == "CONFIG_UPDATE") {
+        RobotConfig newConfig = ConfigStorage::getDefaults();
+        String errorField;
+        String errorMessage;
+
+        if (!parseRobotConfig(doc["data"], newConfig, errorField, errorMessage)) {
+            StaticJsonDocument<320> ack;
+            ack["type"] = "CONFIG_UPDATE_ACK";
+            JsonObject data = ack.createNestedObject("data");
+            data["success"] = false;
+            data["message"] = errorMessage;
+            data["field"] = errorField;
+
+            String out;
+            serializeJson(ack, out);
+            NetworkManager::wsSend(out);
+            return;
+        }
+
+        if (!ConfigStorage::save(newConfig)) {
+            StaticJsonDocument<192> ack;
+            ack["type"] = "CONFIG_UPDATE_ACK";
+            ack["data"]["success"] = false;
+            ack["data"]["message"] = "Failed to save config to NVS";
+
+            String out;
+            serializeJson(ack, out);
+            NetworkManager::wsSend(out);
+            return;
+        }
+
+        VehicleStateMachine::applyConfig(newConfig);
+        MotorController::applyConfig(newConfig);
+
+        sendLog("config_updated", "Robot config updated and saved to flash");
+
+        StaticJsonDocument<512> ack;
+        ack["type"] = "CONFIG_UPDATE_ACK";
+        JsonObject data = ack.createNestedObject("data");
+        data["success"] = true;
+        data["message"] = "Config saved to NVS";
+        data["source"] = "nvs";
+        appendConfigToJson(data.createNestedObject("appliedConfig"), newConfig);
+
+        String out;
+        serializeJson(ack, out);
+        NetworkManager::wsSend(out);
+
+        sendConfigCurrent("runtime");
+
+    } else if (type == "CONFIG_RESET") {
+        bool resetOk = ConfigStorage::reset();
+        RobotConfig defaults = ConfigStorage::getCurrent();
+        VehicleStateMachine::applyConfig(defaults);
+        MotorController::applyConfig(defaults);
+
+        StaticJsonDocument<512> ack;
+        ack["type"] = "CONFIG_UPDATE_ACK";
+        JsonObject data = ack.createNestedObject("data");
+        data["success"] = resetOk;
+        data["action"] = "reset";
+        data["source"] = "default";
+        data["message"] = resetOk ? "Config reset to defaults" : "Failed to reset config";
+        appendConfigToJson(data.createNestedObject("appliedConfig"), defaults);
+
+        String out;
+        serializeJson(ack, out);
+        NetworkManager::wsSend(out);
+
+        if (resetOk) {
+            sendLog("config_reset", "Robot config reset to defaults");
+            sendConfigCurrent("default");
+        }
+
     } else if (type == "WELCOME") {
         Serial.printf("[WS] Server: %s\n",
                       doc["data"]["message"].as<const char*>());
@@ -174,6 +292,70 @@ void CommandProcessor::handleWsMessage(const String& message) {
     } else {
         Serial.printf("[WS] Bỏ qua type không xử lý: %s\n", type.c_str());
     }
+}
+
+bool CommandProcessor::readBoundedUInt16(const JsonVariantConst& data, const char* key,
+                                         uint16_t minValue, uint16_t maxValue,
+                                         uint16_t& outValue, String& errorField, String& errorMessage) {
+    if (data.isNull() || !data[key].is<long>()) {
+        errorField = key;
+        errorMessage = String("Missing or invalid integer field: ") + key;
+        return false;
+    }
+
+    long raw = data[key].as<long>();
+    if (raw < minValue || raw > maxValue) {
+        errorField = key;
+        errorMessage = String(key) + " out of range [" + String(minValue) + "-" + String(maxValue) + "]";
+        return false;
+    }
+
+    outValue = static_cast<uint16_t>(raw);
+    return true;
+}
+
+bool CommandProcessor::parseRobotConfig(const JsonVariantConst& data, RobotConfig& out,
+                                        String& errorField, String& errorMessage) {
+    if (!readBoundedUInt16(data, "minRunSpeed", 0, 255, out.minRunSpeed, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "cruiseSpeed", 0, 255, out.cruiseSpeed, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "fastSpeed", 0, 255, out.fastSpeed, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "backSpeed", 0, 255, out.backSpeed, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "escapeSpeed", 0, 255, out.escapeSpeed, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "sharpTurnBoost", 0, 255, out.sharpTurnBoost, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "mediumTurnBoost", 0, 255, out.mediumTurnBoost, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "turnBoost", 0, 255, out.turnBoost, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "lightTurnBoost", 0, 255, out.lightTurnBoost, errorField, errorMessage)) return false;
+
+    if (!readBoundedUInt16(data, "emergencyDist", 10, 200, out.emergencyDist, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "stopDistance", 10, 200, out.stopDistance, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "slowDistance", 10, 200, out.slowDistance, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "turnDistance", 10, 200, out.turnDistance, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "prepareDistance", 10, 200, out.prepareDistance, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "sideDangerDist", 10, 200, out.sideDangerDist, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "backDangerDistance", 10, 200, out.backDangerDistance, errorField, errorMessage)) return false;
+    if (!readBoundedUInt16(data, "directionHysteresis", 1, 50, out.directionHysteresis, errorField, errorMessage)) return false;
+
+    if (!ConfigStorage::isValidConfig(out)) {
+        errorField = "config";
+        errorMessage = "Invalid config consistency";
+        return false;
+    }
+
+    return true;
+}
+
+void CommandProcessor::sendConfigCurrent(const char* source) {
+    const RobotConfig cfg = ConfigStorage::getCurrent();
+    StaticJsonDocument<512> doc;
+    doc["type"] = "CONFIG_CURRENT";
+    JsonObject data = doc.createNestedObject("data");
+    appendConfigToJson(data, cfg);
+    data["source"] = source ? source : (ConfigStorage::isCurrentFromNvs() ? "nvs" : "default");
+    data["uptime_ms"] = millis();
+
+    String out;
+    serializeJson(doc, out);
+    NetworkManager::wsSend(out);
 }
 
 // ══════════════════════════════════════════
@@ -187,8 +369,10 @@ void CommandProcessor::sendStatusUpdate() {
     StaticJsonDocument<640> doc;
     doc["type"] = "STATUS";
     JsonObject data = doc.createNestedObject("data");
+    State currentState = VehicleStateMachine::getCurrentState();
     data["mode"]    = (_mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
-    data["state"]   = (int)VehicleStateMachine::getCurrentState();
+    data["state"]   = stateToName(currentState);
+    data["stateCode"] = (int)currentState;
     data["rssi"]    = WiFi.RSSI();
     data["uptime"]  = millis() / 1000;
 
@@ -330,7 +514,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
          * Ví dụ: { "direction": "FORWARD", "speed": 120, "duration_ms": 1000 }
          */
         String dir      = params["direction"]   | "FORWARD";
-        int    speed    = params["speed"]        | CRUISE_SPEED;
+        int    speed    = params["speed"]        | (int)MotorController::getConfig().cruiseSpeed;
         int    duration = params["duration_ms"]  | 0;
 
         speed = constrain(speed, 0, 255);
@@ -412,7 +596,7 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
          * Tham số: speed (0-255)
          * Ví dụ: { "speed": 150 }
          */
-        int speed = params["speed"] | CRUISE_SPEED;
+        int speed = params["speed"] | (int)MotorController::getConfig().cruiseSpeed;
         speed = constrain(speed, 0, 255);
         MotorController::setTargetSpeed(speed);
         Serial.printf("[CMD] SET_SPEED %d\n", speed);
@@ -490,9 +674,11 @@ void CommandProcessor::setMode(OperationMode mode) {
 
     // Thông báo lên server qua WebSocket
     StaticJsonDocument<128> doc;
+    State currentState = VehicleStateMachine::getCurrentState();
     doc["type"]           = "STATUS";
     doc["data"]["mode"]   = (mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
-    doc["data"]["state"]  = (int)VehicleStateMachine::getCurrentState();
+    doc["data"]["state"]  = stateToName(currentState);
+    doc["data"]["stateCode"] = (int)currentState;
     String msg;
     serializeJson(doc, msg);
     NetworkManager::wsSend(msg);
