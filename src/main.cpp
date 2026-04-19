@@ -9,6 +9,7 @@
 #include "NetworkManager.h"
 #include "CommandProcessor.h"
 #include "JetsonUART.h"
+#include "ConfigStorage.h"
 
 TaskHandle_t xLogicTaskHandle  = NULL;
 TaskHandle_t xAppTaskHandle    = NULL;

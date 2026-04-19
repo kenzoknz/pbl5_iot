@@ -2,6 +2,7 @@
 #define MOTOR_CONTROLLER_H
 
 #include "Config.h"
+#include "ConfigStorage.h"
 #include <ESP32Servo.h>
 
 class MotorController {
@@ -24,6 +25,8 @@ public:
     static void updatePID();                // Gọi mỗi chu kỳ logic (20Hz)
     static bool isPIDEnabled() { return pidEnabled; }
     static void enablePID(bool enable);
+    static void applyConfig(const RobotConfig& cfg);
+    static RobotConfig getConfig() { return runtimeConfig; }
     
     // Getters/Setters
     static void setTargetSpeed(int speed) { targetSpeed = speed; }
@@ -49,6 +52,7 @@ private:
     static float pidIntegral;
     static float pidLastError;
     static int   pidOutput;  // Bù trừ PID (±50 PWM)
+    static RobotConfig runtimeConfig;
 };
 
 #endif
