@@ -12,35 +12,34 @@ bool JetsonUART::commandPending = false;
 volatile bool JetsonUART::stopHoldActive = false;
 size_t JetsonUART::rxWriteIndex = 0;
 uint32_t JetsonUART::lastStatusMillis = 0;
+QueueHandle_t JetsonUART::xCmdQueue       = nullptr;
 
 void JetsonUART::begin() {
-    Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
+    /* Tạo queue 1 phần tử kiểu JetsonCmdType (1 byte) */
+    xCmdQueue = xQueueCreate(1, sizeof(JetsonCmdType));
+    configASSERT(xCmdQueue != nullptr);   // Halt nếu heap không đủ
+
+    // Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
     clearRxBuffer();
     commandDoc.clear();
+
     lastCommandMillis = millis();
     lastStatusMillis = 0;
     commandPending = false;
     stopHoldActive = false;
-    Serial.println("[UART] Jetson Serial1 initialized on GPIO39/15");
+    Serial.printf("[UART] Jetson Serial1 init — RX:GPIO%d TX:GPIO%d @%d baud\n",
+                  ROS_RX_PIN, ROS_TX_PIN, JETSON_UART_BAUD);
 }
 
 bool JetsonUART::checkForCommands() {
     while (Serial1.available() > 0) {
         const int raw = Serial1.read();
-        if (raw < 0) {
-            break;
-        }
+        if (raw < 0) break;
 
         const char ch = static_cast<char>(raw);
-        if (ch == '\r') {
-            continue;
-        }
-
+        if (ch == '\r') continue;
         if (ch == '\n') {
-            if (rxWriteIndex == 0) {
-                continue;
-            }
-
+            if (rxWriteIndex == 0) continue;
             rxBuffer[rxWriteIndex] = '\0';
             commandPending = true;
             return true;
@@ -62,9 +61,7 @@ bool JetsonUART::checkForCommands() {
 }
 
 void JetsonUART::handleJetsonCommand() {
-    if (!commandPending) {
-        return;
-    }
+    if (!commandPending) return;
 
     commandDoc.clear();
 
@@ -90,66 +87,88 @@ void JetsonUART::handleJetsonCommand() {
 
     // A syntactically valid command line from Jetson keeps the link alive.
     lastCommandMillis = millis();
+    JetsonCmdType cmdType = JETSON_CMD_NONE;
 
     if (cmd == "STOP") {
-        engageStopHold();
-        Serial.println("[JETSON] STOP received -> hold enabled");
-
+        cmdType = JETSON_CMD_STOP;
+        Serial.println("[JETSON] Enqueue: STOP");
+ 
     } else if (cmd == "FORWARD" || cmd == "AUTONOMOUS" || cmd == "RESUME") {
-        clearStopHold();
-        Serial.println("[JETSON] FORWARD received -> hold cleared");
-
+        cmdType = JETSON_CMD_FORWARD;
+        Serial.println("[JETSON] Enqueue: FORWARD");
+ 
     } else if (cmd == "MANUAL") {
-        Serial.println("[JETSON] MANUAL ignored (Jetson is limited to STOP/FORWARD)");
-
+        /* MANUAL từ Jetson bị bỏ qua — Jetson chỉ dùng STOP/FORWARD */
+        Serial.println("[JETSON] MANUAL ignored (Jetson only: STOP/FORWARD)");
+ 
     } else {
-        Serial.printf("[JETSON] Unsupported cmd: %s\n", cmd.c_str());
+        Serial.printf("[JETSON] Unknown cmd: '%s'\n", cmd.c_str());
+    }
+
+    // if (cmd == "STOP") {
+    //     engageStopHold();
+    //     Serial.println("[JETSON] STOP received -> hold enabled");
+
+    // } else if (cmd == "FORWARD" || cmd == "AUTONOMOUS" || cmd == "RESUME") {
+    //     clearStopHold();
+    //     Serial.println("[JETSON] FORWARD received -> hold cleared");
+
+    // } else if (cmd == "MANUAL") {
+    //     Serial.println("[JETSON] MANUAL ignored (Jetson is limited to STOP/FORWARD)");
+
+    // } else {
+    //     Serial.printf("[JETSON] Unsupported cmd: %s\n", cmd.c_str());
+    // }
+
+    if (cmdType != JETSON_CMD_NONE) {
+        xQueueOverwrite(xCmdQueue, &cmdType);
     }
 
     commandPending = false;
     clearRxBuffer();
 }
 
-void JetsonUART::sendStatus() {
-    const uint32_t now = millis();
-    if ((now - lastStatusMillis) < JETSON_STATUS_INTERVAL_MS) {
-        return;
+
+bool JetsonUART::processQueuedCommand() {
+    if (xCmdQueue == nullptr) return false;
+ 
+    JetsonCmdType cmdType = JETSON_CMD_NONE;
+ 
+    /* xQueueReceive với timeout=0 → không block vLogicTask */
+    if (xQueueReceive(xCmdQueue, &cmdType, 0) != pdTRUE) {
+        return false;   // Queue trống — không có lệnh mới
     }
-    lastStatusMillis = now;
-
-    StaticJsonDocument<JETSON_JSON_BUFFER_SIZE> statusDoc;
-    statusDoc["type"] = "STATUS";
-
-    const OperationMode mode = UltrasonicSensor::getMode();
-    statusDoc["mode"] = (mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
-    statusDoc["jetson_stop_hold"] = stopHoldActive;
-    statusDoc["speed"] = MotorController::getCurrentSpeed();
-    statusDoc["throttle"] = MotorController::getTargetSpeed();
-    statusDoc["steering_angle"] = MotorController::getSteerServoAngle();
-    statusDoc["battery_voltage"] = readBatteryVoltage();
-
-    const GpsData gpsData = GPSSensor::getData();
-    JsonObject gps = statusDoc.createNestedObject("gps");
-    gps["lat"] = gpsData.fix ? gpsData.lat : 0.0;
-    gps["lon"] = gpsData.fix ? gpsData.lng : 0.0;
-    gps["heading"] = gpsData.course_deg;
-
-    JsonObject sensors = statusDoc.createNestedObject("sensors");
-    sensors["front"] = UltrasonicSensor::getFrontDistance();
-    sensors["left"] = UltrasonicSensor::getLeftDistance();
-    sensors["right"] = UltrasonicSensor::getRightDistance();
-    sensors["back"] = UltrasonicSensor::getBackDistance();
-
-    statusDoc["timestamp"] = now;
-
-    String payload;
-    const size_t bytes = serializeJson(statusDoc, payload);
-    if (bytes == 0) {
-        Serial.println("[JETSON] Failed to serialize STATUS payload");
-        return;
+ 
+    switch (cmdType) {
+        case JETSON_CMD_STOP:
+            engageStopHold();
+            Serial.println("[JETSON → Logic] STOP");
+            break;
+ 
+        case JETSON_CMD_FORWARD:
+            clearStopHold();
+            Serial.println("[JETSON → Logic] FORWARD — stopHold cleared");
+            break;
+ 
+        default:
+            break;
     }
+ 
+    return true;
+}
 
-    Serial1.println(payload);
+void JetsonUART::checkWatchdog() {
+    static bool timeoutLogged = false;
+ 
+    if (!isJetsonConnected()) {
+        if (!timeoutLogged) {
+            clearStopHold();
+            Serial.println("[JETSON Watchdog] Timeout — ESP32 takes primary control");
+            timeoutLogged = true;
+        }
+    } else {
+        timeoutLogged = false;   // Reset khi Jetson kết nối lại
+    }
 }
 
 uint32_t JetsonUART::getLastCommandTime() {
