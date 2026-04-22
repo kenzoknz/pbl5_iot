@@ -5,8 +5,9 @@
 // Ưu tiên Task (Default: 0 (min) -> 24)
 #define PRIORITY_MOTOR    5
 #define PRIORITY_SENSORS  6
+#define PRIORITY_JETSON   6 
 #define PRIORITY_LOGIC    5
-#define PRIORITY_APP      7  // cao để realtime
+#define PRIORITY_APP      6 
 
 // Thêm ngưỡng dừng khẩn cấp (Priority Break)
 #define EMERGENCY_STOP_DIST 10 
@@ -16,12 +17,19 @@
 #define STACK_SIZE_SENSORS 4096
 #define STACK_SIZE_LOGIC   4096
 #define STACK_SIZE_MOTOR   2048
-#define STACK_SIZE_APP     8192
+#define STACK_SIZE_APP     6144
+#define STACK_SIZE_JETSON  3072
 
 // // Thay đổi:
 // #define STACK_SIZE_SENSORS 3072  // Giảm từ 4096 (chỉ dùng cho frontGroup)
 // // Thêm:
 // #define STACK_SIZE_BACK_SENSOR 2048  // Riêng cho back sensor
+
+/* ── Tốc độ polling của JetsonTask ──
+ * 10ms (100Hz): nhanh gấp 5x LogicTask (50ms)
+ * Đảm bảo lệnh STOP từ Jetson được enqueue vào queue
+ * TRƯỚC khi LogicTask chạy chu kỳ tiếp theo.            */
+#define JETSON_TASK_RATE_MS  10
 
 /* ================== MPU6050 ================== */
 #define SDA_PIN 32
@@ -38,6 +46,7 @@
 
 /* ================== SERVO ================== */
 #define SERVO_STEER_PIN 23        // Servo lái bánh xe
+#define SERVO_STRAIGHT  90  // Góc servo thẳng (dùng trong JetsonUART stopHold)
 
 /* ================== ULTRASONIC - 4 ================== */
 // Front - center

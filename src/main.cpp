@@ -11,61 +11,56 @@
 #include "communication/JetsonUART.h"
 #include "core/ConfigStorage.h"
 
-// Task Handles để quản lý (Suspend/Resume/Monitor)
-TaskHandle_t xLogicTaskHandle = NULL;
-TaskHandle_t xAppTaskHandle   = NULL;
-
-// Hàm định nghĩa các Task
-void vLogicTask(void *pvParameters);
-void vAppTask(void *pvParameters);
+TaskHandle_t xLogicTaskHandle  = NULL;
+TaskHandle_t xAppTaskHandle    = NULL;
+TaskHandle_t xJetsonTaskHandle = NULL;
+ 
+void vLogicTask (void *pvParameters);
+void vAppTask   (void *pvParameters);
+void vJetsonTask(void *pvParameters);
 
 void setup() {
     Serial.begin(115200);
     Serial.println("=== ESP32 ROBOT ===");
 
     // 1. phần cứng
-    UltrasonicSensor::begin(); // 4 cam bien -> 4 tasks Core 0
+    UltrasonicSensor::begin();
     
     if (!MPUSensor::begin()) { // mpuTask trên Core 1
-        Serial.println("!!! DUNG LAI: Loi MPU6050 !!!");
+        Serial.println("!!! MPU6050 init failed !!!");
         while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
     
     MotorController::begin();
+
     // Encoder (PCNT hardware + task Core 1) 
     if (!EncoderSensor::begin()) {
-        Serial.println("!!! ENCODER FAILED !!!");
-        // Không halt — encoder là optional, robot vẫn chạy được không có PID
+        Serial.println("!!! ENCODER FAILED -> PID disabled !!!"); // robot vẫn chạy được không có PID
     } else {
         MotorController::enablePID(true);  // Bật PID khi encoder hoạt động
     }
+
     GPSSensor::begin();
     VehicleStateMachine::begin();
-
-    // Load persisted config from NVS flash (fallback to defaults if empty).
-    ConfigStorage::begin();
-    RobotConfig cfg;
-    if (ConfigStorage::load(cfg)) {
-        VehicleStateMachine::applyConfig(cfg);
-        MotorController::applyConfig(cfg);
-        Serial.println("[MAIN] Loaded config from NVS flash");
-    } else {
-        VehicleStateMachine::applyConfig(cfg);
-        MotorController::applyConfig(cfg);
-        Serial.println("[MAIN] Using default config from Config.h");
-    }
-    ConfigStorage::printConfig(cfg, "[MAIN]");
-    
-    // Init GPS queue
     GpsQueue::begin();
+
+    xTaskCreatePinnedToCore(
+        vJetsonTask,
+        "JetsonTask",
+        STACK_SIZE_JETSON,      // 3072 bytes
+        NULL,
+        PRIORITY_JETSON,        // 6
+        &xJetsonTaskHandle,
+        0
+    );
 
     // 2. Task Xử lý Logic (State Machine) -  Core 1, 20Hz
     // Nhiệm vụ: Ra quyết định điều hướng dựa trên dữ liệu từ SensorTask
     xTaskCreatePinnedToCore(
-        vLogicTask,             // Hàm thực thi
-        "LogicTask",            // Tên Task
+        vLogicTask,             
+        "LogicTask",           
         STACK_SIZE_LOGIC,       // Độ lớn Stack (từ Config.h)
-        NULL,                   // Tham số truyền vào
+        NULL,                   
         PRIORITY_LOGIC,         // Ưu tiên (Trung bình)
         &xLogicTaskHandle,      // Handle để quản lý
         1                       // Chạy trên Core 1 (Xử lý tính toán)
@@ -83,11 +78,41 @@ void setup() {
         0                       // Core 0 (Chuyên trách kết nối & I/O)
     );
 
-    Serial.println("=== TAT CA TASK DA KHOI CHAY ===");
+    Serial.println("=== ALL TASKS STARTED ===");
     
-    // Xóa Task setup() để giải phóng bộ nhớ (FreeRTOS sẽ quản lý hoàn toàn)
     vTaskDelete(NULL); 
 }
+
+ 
+/* ══════════════════════════════════════════════════════
+ *  vJetsonTask — Core 0, Priority 6, 100Hz
+ *
+ *  Hoạt động như một sensor task:
+ *  - Độc lập hoàn toàn với WiFi
+ *  - Polling Serial1 mỗi 10ms (5x nhanh hơn LogicTask)
+ *  - Đảm bảo lệnh STOP được enqueue TRƯỚC khi LogicTask
+ *    chạy chu kỳ tiếp theo (50ms)
+ *
+ *  Chỉ làm:  đọc RX + parse + enqueue + gửi TX status
+ *  Không làm: WiFi, WebSocket, MotorController
+ * ══════════════════════════════════════════════════════ */
+void vJetsonTask(void *pvParameters) {
+    JetsonUART::begin();
+ 
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(JETSON_TASK_RATE_MS); // 10ms
+ 
+    for (;;) {
+        /* ── RX: đọc byte → khi có line hoàn chỉnh thì parse → enqueue ── */
+        if (JetsonUART::checkForCommands()) {
+            JetsonUART::handleJetsonCommand();
+        }
+ 
+        /* Giữ nhịp 100Hz chính xác — preempt nếu vừa xử lý xong sớm */
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+ 
 
 /**
  * Task Logic: Xử lý State Machine và Điều khiển Motor
@@ -98,6 +123,17 @@ void vLogicTask(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz
 
     for (;;) {
+        JetsonUART::processQueuedCommand();
+        JetsonUART::checkWatchdog();
+        if (JetsonUART::isStopHoldActive()) {
+            MotorController::setTargetSpeed(0);
+            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+            MotorController::stopMotor();
+            MotorController::smoothSteerServoTransition();
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+            continue;
+        }
+
         // Chỉ chạy logic tự hành nếu đang ở chế độ AUTONOMOUS
         if (UltrasonicSensor::getMode() == OperationMode::AUTONOMOUS) {
             VehicleStateMachine::update();
@@ -123,7 +159,18 @@ void vLogicTask(void *pvParameters) {
 /**
  * Task App: Kết nối WiFi, WebSocket, nhận lệnh từ Web Server.
  * Chạy trên Core 0 — non-blocking.
+ * 
+ * *  ── WiFi Guard ──
+ *  Khi không có WiFi:
+ *    • Chỉ chạy GPS update (Serial2, độc lập WiFi)
+ *    • Chỉ chạy tickSafety (joystick watchdog)
+ *    • reconnectIfNeeded() với backoff
+ *    • Delay 500ms → task chạy ở 2Hz thay vì 20Hz
+ *    • SKIP toàn bộ WebSocket / HTTP / GPS queue
  *
+ *  Khi có WiFi:
+ *    • Chạy đầy đủ 20Hz
+ * 
  * Luồng:
  *   1. Kết nối WiFi
  *   2. Khởi tạo WebSocket → server push lệnh realtime
@@ -136,34 +183,45 @@ void vLogicTask(void *pvParameters) {
 void vAppTask(void *pvParameters) {
     // ── Bước 1: WiFi ──
     bool wifiOk = NetworkManager::initWiFi();
-    if (!wifiOk) {
-        Serial.println("[APP] Không có WiFi — tiếp tục ở chế độ offline (AUTONOMOUS)");
+    if (wifiOk) {
+        NetworkManager::initWebSocket([](const String& msg) {
+            CommandProcessor::handleWsMessage(msg);
+        });
+        Serial.println("[APP] WiFi + WebSocket ready");
+    } else {
+        Serial.println("[APP] No WiFi — offline mode (Jetson + AUTONOMOUS unaffected)");
     }
-
-    // ── Bước 2: WebSocket ──
-    // Callback: chuyển mọi message WS sang CommandProcessor
-    NetworkManager::initWebSocket([](const String& msg) {
-        CommandProcessor::handleWsMessage(msg);
-    });
 
     // ── Bước 3: Khởi tạo CommandProcessor ──
     CommandProcessor::begin();
-    JetsonUART::begin();
+    // JetsonUART::begin();
 
     Serial.println("[APP] AppTask ready.");
 
-    static uint32_t lastStatusSend = 0;
-    bool jetsonTimeoutLogged = false;
+    // static uint32_t lastStatusSend = 0;
+    // bool jetsonTimeoutLogged = false;
 
     for (;;) {
-        // Kiểm tra WiFi, tự reconnect với exponential backoff
-        NetworkManager::reconnectIfNeeded();
-
-        // Tick WebSocket (xử lý ping/pong, nhận frame, gửi pending)
-        NetworkManager::wsLoop();
+        // ----------luôn chạy, độc lập với Wifi
 
         // Tick GPS parser (Neo-7N UART2)
         GPSSensor::update();
+        // Safety watchdog: nếu joystick ngừng gửi realtime command thì tự dừng xe
+        CommandProcessor::tickSafety();
+
+        // --------wifi (skip if offline)
+        if (!NetworkManager::isWiFiConnected()) {
+            NetworkManager::reconnectIfNeeded();
+ 
+            /* Chạy chậm lại khi offline: 2Hz thay vì 20Hz, không tranh với JetsonTask (priority 6) */
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;  
+        }
+
+        // ---------Online mode: chạy đầy đủ 20Hz, xử lý WebSocket realtime
+
+        // Tick WebSocket (xử lý ping/pong, nhận frame, gửi pending)
+        NetworkManager::wsLoop();
 
         // Tick portal cấu hình WiFi khi ESP đang ở SoftAP fallback
         NetworkManager::portalLoop();
@@ -174,39 +232,11 @@ void vAppTask(void *pvParameters) {
             CommandProcessor::pollCommands();
             CommandProcessor::pollMode();  // Sync mode với database
         }
-
-        // NEW: Jetson UART check
-        if (JetsonUART::checkForCommands()) {
-            JetsonUART::handleJetsonCommand();
-            Serial.println("[JETSON] Command executed");
-            jetsonTimeoutLogged = false;
-        }
-
-        // Periodic status send
-        if (millis() - lastStatusSend > JETSON_STATUS_INTERVAL_MS) {
-            JetsonUART::sendStatus();
-            lastStatusSend = millis();
-        }
-
-        // Jetson watchdog fallback (once per timeout)
-        if (!JetsonUART::isJetsonConnected()) {
-            if (!jetsonTimeoutLogged) {
-                UltrasonicSensor::setMode(AUTONOMOUS);
-                Serial.println("[JETSON] Timeout - falling back to AUTONOMOUS");
-                jetsonTimeoutLogged = true;
-            }
-        } else {
-            jetsonTimeoutLogged = false;
-        }
-
         // Flush GPS queue khi mạng lại
         CommandProcessor::tickQueueFlush();
 
         // Gửi status robot lên server qua WebSocket (throttled 5s)
         CommandProcessor::sendStatusUpdate();
-
-        // Safety watchdog: nếu joystick ngừng gửi realtime command thì tự dừng xe
-        CommandProcessor::tickSafety();
 
         // Nhường CPU — 50ms (20Hz), đủ nhạy cho MANUAL control
         vTaskDelay(pdMS_TO_TICKS(50));
