@@ -1,5 +1,5 @@
-#include "EncoderSensor.h"
-#include "MotorController.h"
+#include "sensors/EncoderSensor.h"
+#include "control/MotorController.h"
 #include <Arduino.h>
 #include <driver/pcnt.h>  // ESP32 Hardware Pulse Counter
 

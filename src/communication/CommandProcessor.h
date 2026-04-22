@@ -13,12 +13,12 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "NetworkManager.h"
-#include "UltrasonicSensor.h"
-#include "MotorController.h"
-#include "VehicleStateMachine.h"
-#include "GpsQueue.h"
-#include "ConfigStorage.h"
+#include "communication/NetworkManager.h"
+#include "sensors/UltrasonicSensor.h"
+#include "control/MotorController.h"
+#include "control/VehicleStateMachine.h"
+#include "sensors/GpsQueue.h"
+#include "core/ConfigStorage.h"
 
 // ══════════════════════════════════════════
 //  Góc servo lái — chỉnh theo xe thực tế
@@ -122,3 +122,4 @@ private:
 };
 
 #endif // COMMAND_PROCESSOR_H
+

@@ -1,4 +1,4 @@
-#include "GpsQueue.h"
+#include "sensors/GpsQueue.h"
 
 GpsQueueEntry GpsQueue::_buffer[GpsQueue::QUEUE_SIZE];
 uint16_t GpsQueue::_head = 0;
@@ -55,3 +55,4 @@ void GpsQueue::clear() {
     _head = _tail = _count = 0;
     portEXIT_CRITICAL(&_mux);
 }
+

@@ -2,7 +2,7 @@
 #define CONFIG_STORAGE_H
 
 #include <Arduino.h>
-#include "Config.h"
+#include "core/Config.h"
 
 struct RobotConfig {
     // Speed constants (PWM)
@@ -50,3 +50,4 @@ private:
 };
 
 #endif // CONFIG_STORAGE_H
+

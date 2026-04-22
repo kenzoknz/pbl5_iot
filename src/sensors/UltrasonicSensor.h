@@ -3,7 +3,7 @@
 
 // #define DEBUG_SENSOR
 
-#include "Config.h"
+#include "core/Config.h"
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

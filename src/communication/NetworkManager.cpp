@@ -3,7 +3,7 @@
  * Triển khai WiFi, HTTP và WebSocket cho ESP32.
  */
 
-#include "NetworkManager.h"
+#include "communication/NetworkManager.h"
 #include <Preferences.h>
 #include <WebServer.h>
 
@@ -418,3 +418,4 @@ int NetworkManager::httpPut(const String& path, const String& jsonBody) {
     http.end();
     return code;
 }
+

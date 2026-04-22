@@ -1,7 +1,7 @@
 #ifndef MPU_SENSOR_H
 #define MPU_SENSOR_H
 
-#include "Config.h"
+#include "core/Config.h"
 #include <MPU6050_light.h>
 #include <Wire.h>
 

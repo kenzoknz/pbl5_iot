@@ -1,7 +1,7 @@
 #ifndef ENCODER_SENSOR_H
 #define ENCODER_SENSOR_H
 
-#include "Config.h"
+#include "core/Config.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>

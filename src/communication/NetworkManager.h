@@ -16,10 +16,10 @@
 // ══════════════════════════════════════════
 //  CẤU HÌNH — Chỉnh sửa theo môi trường
 // ══════════════════════════════════════════
-#define WIFI_SSID_DEFAULT     "S-Group"        // Tên WiFi mặc định
-#define WIFI_PASS_DEFAULT     "sgroup11235"
+#define WIFI_SSID_DEFAULT     "ITF-DUT"     // Tên WiFi mặc định
+#define WIFI_PASS_DEFAULT     "Haduckien1709"
 
-#define SERVER_HOST          "192.168.1.6"   // IP server (không có http://)
+#define SERVER_HOST          "pbl5.ddns.net"   // IP server (không có http://)
 #define SERVER_PORT          5000
 #define BASE_URL             "http://" SERVER_HOST ":" "5000"
 

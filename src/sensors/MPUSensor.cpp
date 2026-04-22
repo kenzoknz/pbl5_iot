@@ -1,4 +1,4 @@
-#include "MPUSensor.h"
+#include "sensors/MPUSensor.h"
 #include <Arduino.h>
 
 // Static member definitions

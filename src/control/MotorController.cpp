@@ -1,6 +1,6 @@
-#include "MotorController.h"
-#include "MPUSensor.h"
-#include "EncoderSensor.h"
+#include "control/MotorController.h"
+#include "sensors/MPUSensor.h"
+#include "sensors/EncoderSensor.h"
 #include <Arduino.h>
 
 // Định nghĩa Mutex để bảo vệ dữ liệu Motor (Thread-safety giữa Core 0 và Core 1)

@@ -1,8 +1,8 @@
 #ifndef VEHICLE_STATE_MACHINE_H
 #define VEHICLE_STATE_MACHINE_H
 
-#include "Config.h"
-#include "ConfigStorage.h"
+#include "core/Config.h"
+#include "core/ConfigStorage.h"
 
 class VehicleStateMachine {
 public:

@@ -3,8 +3,8 @@
  * Triển khai xử lý lệnh Web Server → ESP32.
  */
 
-#include "CommandProcessor.h"
-#include "GPSSensor.h"
+#include "communication/CommandProcessor.h"
+#include "sensors/GPSSensor.h"
 
 namespace {
 void appendConfigToJson(JsonObject obj, const RobotConfig& cfg) {
@@ -779,3 +779,4 @@ void CommandProcessor::tickQueueFlush() {
         Serial.printf("[CMD] ✗ Queue flush failed code=%d, points discarded\n", code);
     }
 }
+

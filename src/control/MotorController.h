@@ -1,8 +1,8 @@
 #ifndef MOTOR_CONTROLLER_H
 #define MOTOR_CONTROLLER_H
 
-#include "Config.h"
-#include "ConfigStorage.h"
+#include "core/Config.h"
+#include "core/ConfigStorage.h"
 #include <ESP32Servo.h>
 
 class MotorController {

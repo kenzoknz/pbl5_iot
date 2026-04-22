@@ -1,7 +1,7 @@
-#include "GPSSensor.h"
-#include "GpsQueue.h"
-#include "Config.h"
-#include "NetworkManager.h"
+#include "sensors/GPSSensor.h"
+#include "sensors/GpsQueue.h"
+#include "core/Config.h"
+#include "communication/NetworkManager.h"
 
 TinyGPSPlus GPSSensor::_gps;
 GpsData GPSSensor::_data = {
@@ -178,3 +178,4 @@ String GPSSensor::buildIsoTime() {
 bool GPSSensor::validCoordinates(double lat, double lng) {
     return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
 }
+

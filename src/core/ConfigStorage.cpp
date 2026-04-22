@@ -1,4 +1,4 @@
-#include "ConfigStorage.h"
+#include "core/ConfigStorage.h"
 
 #include <Preferences.h>
 #include <nvs_flash.h>
@@ -223,3 +223,4 @@ void ConfigStorage::printConfig(const RobotConfig& cfg, const char* prefix) {
                   cfg.backDangerDistance,
                   cfg.directionHysteresis);
 }
+

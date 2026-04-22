@@ -1,8 +1,8 @@
-#include "VehicleStateMachine.h"
-#include "UltrasonicSensor.h"
-#include "MPUSensor.h"
-#include "MotorController.h"
-#include "EncoderSensor.h"
+#include "control/VehicleStateMachine.h"
+#include "sensors/UltrasonicSensor.h"
+#include "sensors/MPUSensor.h"
+#include "control/MotorController.h"
+#include "sensors/EncoderSensor.h"
 #include <Arduino.h>
 
 // Static member definitions

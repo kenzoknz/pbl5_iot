@@ -1,9 +1,9 @@
-#include "JetsonUART.h"
+#include "communication/JetsonUART.h"
 
 #include <cstring>
 
-#include "GPSSensor.h"
-#include "MotorController.h"
+#include "sensors/GPSSensor.h"
+#include "control/MotorController.h"
 
 uint8_t JetsonUART::rxBuffer[JETSON_JSON_BUFFER_SIZE] = {0};
 DynamicJsonDocument JetsonUART::commandDoc(JETSON_JSON_BUFFER_SIZE);

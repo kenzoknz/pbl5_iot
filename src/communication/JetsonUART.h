@@ -4,8 +4,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-#include "Config.h"
-#include "UltrasonicSensor.h"
+#include "core/Config.h"
+#include "sensors/UltrasonicSensor.h"
 
 class JetsonUART {
 public:

@@ -1,5 +1,5 @@
-#include "UltrasonicSensor.h"
-#include "MotorController.h"
+#include "sensors/UltrasonicSensor.h"
+#include "control/MotorController.h"
 #include <Arduino.h>
 #include <algorithm>
 
