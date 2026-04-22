@@ -98,6 +98,16 @@ void vLogicTask(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz
 
     for (;;) {
+        // Jetson chỉ đóng vai trò safety gate: đang hold thì cưỡng bức dừng.
+        if (JetsonUART::isStopHoldActive()) {
+            MotorController::setTargetSpeed(0);
+            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+            MotorController::stopMotor();
+            MotorController::smoothSteerServoTransition();
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+            continue;
+        }
+
         // Chỉ chạy logic tự hành nếu đang ở chế độ AUTONOMOUS
         if (UltrasonicSensor::getMode() == OperationMode::AUTONOMOUS) {
             VehicleStateMachine::update();
@@ -191,12 +201,17 @@ void vAppTask(void *pvParameters) {
         // Jetson watchdog fallback (once per timeout)
         if (!JetsonUART::isJetsonConnected()) {
             if (!jetsonTimeoutLogged) {
-                UltrasonicSensor::setMode(AUTONOMOUS);
-                Serial.println("[JETSON] Timeout - falling back to AUTONOMOUS");
+                JetsonUART::clearStopHold();
+                Serial.println("[JETSON] Timeout - release STOP hold, ESP32 keeps primary control");
                 jetsonTimeoutLogged = true;
             }
         } else {
             jetsonTimeoutLogged = false;
+        }
+
+        if (JetsonUART::isStopHoldActive()) {
+            MotorController::setTargetSpeed(0);
+            MotorController::stopMotor();
         }
 
         // Flush GPS queue khi mạng lại

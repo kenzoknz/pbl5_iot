@@ -7,9 +7,9 @@
 
 uint8_t JetsonUART::rxBuffer[JETSON_JSON_BUFFER_SIZE] = {0};
 DynamicJsonDocument JetsonUART::commandDoc(JETSON_JSON_BUFFER_SIZE);
-OperationMode JetsonUART::lastJetsonMode = AUTONOMOUS;
 uint32_t JetsonUART::lastCommandMillis = 0;
 bool JetsonUART::commandPending = false;
+volatile bool JetsonUART::stopHoldActive = false;
 size_t JetsonUART::rxWriteIndex = 0;
 uint32_t JetsonUART::lastStatusMillis = 0;
 
@@ -17,10 +17,10 @@ void JetsonUART::begin() {
     Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
     clearRxBuffer();
     commandDoc.clear();
-    lastJetsonMode = UltrasonicSensor::getMode();
     lastCommandMillis = millis();
     lastStatusMillis = 0;
     commandPending = false;
+    stopHoldActive = false;
     Serial.println("[UART] Jetson Serial1 initialized on GPIO39/15");
 }
 
@@ -92,31 +92,15 @@ void JetsonUART::handleJetsonCommand() {
     lastCommandMillis = millis();
 
     if (cmd == "STOP") {
-        MotorController::setTargetSpeed(0);
-        MotorController::stopMotor();
-        UltrasonicSensor::setMode(MANUAL);
-        lastJetsonMode = MANUAL;
-        Serial.println("[JETSON] STOP received");
+        engageStopHold();
+        Serial.println("[JETSON] STOP received -> hold enabled");
 
-    } else if (cmd == "AUTONOMOUS") {
-        MotorController::setTargetSpeed(0);
-        MotorController::setTargetSteerServoAngle(90);
-        UltrasonicSensor::setMode(AUTONOMOUS);
-        lastJetsonMode = AUTONOMOUS;
-        Serial.println("[JETSON] AUTONOMOUS received");
+    } else if (cmd == "FORWARD" || cmd == "AUTONOMOUS" || cmd == "RESUME") {
+        clearStopHold();
+        Serial.println("[JETSON] FORWARD received -> hold cleared");
 
     } else if (cmd == "MANUAL") {
-        int throttle = commandDoc["throttle"] | 0;
-        int steering = commandDoc["steering"] | 90;
-
-        throttle = constrain(throttle, 0, 255);
-        steering = constrain(steering, 55, 125);
-
-        UltrasonicSensor::setMode(MANUAL);
-        MotorController::setTargetSpeed(throttle);
-        MotorController::setTargetSteerServoAngle(steering);
-        lastJetsonMode = MANUAL;
-        Serial.printf("[JETSON] MANUAL received (throttle=%d, steering=%d)\n", throttle, steering);
+        Serial.println("[JETSON] MANUAL ignored (Jetson is limited to STOP/FORWARD)");
 
     } else {
         Serial.printf("[JETSON] Unsupported cmd: %s\n", cmd.c_str());
@@ -138,6 +122,7 @@ void JetsonUART::sendStatus() {
 
     const OperationMode mode = UltrasonicSensor::getMode();
     statusDoc["mode"] = (mode == AUTONOMOUS) ? "AUTONOMOUS" : "MANUAL";
+    statusDoc["jetson_stop_hold"] = stopHoldActive;
     statusDoc["speed"] = MotorController::getCurrentSpeed();
     statusDoc["throttle"] = MotorController::getTargetSpeed();
     statusDoc["steering_angle"] = MotorController::getSteerServoAngle();
@@ -173,6 +158,20 @@ uint32_t JetsonUART::getLastCommandTime() {
 
 bool JetsonUART::isJetsonConnected() {
     return (millis() - lastCommandMillis) <= JETSON_WATCHDOG_TIMEOUT_MS;
+}
+
+bool JetsonUART::isStopHoldActive() {
+    return stopHoldActive;
+}
+
+void JetsonUART::clearStopHold() {
+    stopHoldActive = false;
+}
+
+void JetsonUART::engageStopHold() {
+    stopHoldActive = true;
+    MotorController::setTargetSpeed(0);
+    MotorController::stopMotor();
 }
 
 void JetsonUART::clearRxBuffer() {
