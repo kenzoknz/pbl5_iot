@@ -9,6 +9,9 @@
 #include "core/Config.h"
 #include "sensors/UltrasonicSensor.h"
 
+// Uncomment to enable raw UART logging for debugging.
+// #define JETSON_UART_RAW_LOG 1
+
 enum JetsonCmdType : uint8_t {
     JETSON_CMD_NONE    = 0,
     JETSON_CMD_STOP    = 1,
@@ -23,7 +26,7 @@ public:
     static void handleJetsonCommand();
     // static void sendStatus();
 
-    static bool processQueuedCommand();  // Dequeue → áp lên MotorController
+    static bool processQueuedCommand(bool allowOverride = true);
     static void checkWatchdog();         // Giải phóng stopHold nếu Jetson timeout
 
     static uint32_t getLastCommandTime();

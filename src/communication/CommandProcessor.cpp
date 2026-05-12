@@ -508,15 +508,7 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
 
 void CommandProcessor::applyManualCommand(const String& command, const JsonObject& params) {
 
-    if (command == "MOVE") {
-        /*
-         * Tham số: direction (FORWARD|BACKWARD|LEFT|RIGHT), speed (0-255), duration_ms
-         * Ví dụ: { "direction": "FORWARD", "speed": 120, "duration_ms": 1000 }
-         */
-        String dir      = params["direction"]   | "FORWARD";
-        int    speed    = params["speed"]        | (int)MotorController::getConfig().cruiseSpeed;
-        int    duration = params["duration_ms"]  | 0;
-
+    auto handleMove = [&](const String& dir, int speed, int duration) {
         speed = constrain(speed, 0, 255);
 
         if (dir == "FORWARD") {
@@ -544,17 +536,48 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             Serial.printf("[CMD] MOVE RIGHT speed=%d\n", speed);
 
         } else {
-            Serial.printf("[CMD] MOVE: direction không hợp lệ '%s'\n", dir.c_str());
+            Serial.printf("[CMD] MOVE: direction khong hop le '%s'\n", dir.c_str());
             return;
         }
 
-        // Nếu có duration — chạy rồi tự dừng
         if (duration > 0) {
             vTaskDelay(pdMS_TO_TICKS(duration));
             MotorController::stopMotor();
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
-            Serial.printf("[CMD] MOVE kết thúc sau %d ms\n", duration);
+            Serial.printf("[CMD] MOVE ket thuc sau %d ms\n", duration);
         }
+    };
+
+    if (command == "MOVE") {
+        /*
+         * Tham số: direction (FORWARD|BACKWARD|LEFT|RIGHT), speed (0-255), duration_ms
+         * Ví dụ: { "direction": "FORWARD", "speed": 120, "duration_ms": 1000 }
+         */
+        String dir      = params["direction"]   | "FORWARD";
+        int    speed    = params["speed"]        | (int)MotorController::getConfig().cruiseSpeed;
+        int    duration = params["duration_ms"]  | 0;
+        handleMove(dir, speed, duration);
+
+    } else if (command == "MOVE_FORWARD") {
+        // Legacy DB commands from web server: map to MOVE
+        int speed = params["speed"] | (int)MotorController::getConfig().cruiseSpeed;
+        int duration = params["duration_ms"] | 0;
+        handleMove("FORWARD", speed, duration);
+
+    } else if (command == "MOVE_BACKWARD") {
+        int speed = params["speed"] | (int)MotorController::getConfig().cruiseSpeed;
+        int duration = params["duration_ms"] | 0;
+        handleMove("BACKWARD", speed, duration);
+
+    } else if (command == "TURN_LEFT") {
+        int speed = params["speed"] | (int)MotorController::getConfig().cruiseSpeed;
+        int duration = params["duration_ms"] | 0;
+        handleMove("LEFT", speed, duration);
+
+    } else if (command == "TURN_RIGHT") {
+        int speed = params["speed"] | (int)MotorController::getConfig().cruiseSpeed;
+        int duration = params["duration_ms"] | 0;
+        handleMove("RIGHT", speed, duration);
 
     } else if (command == "STOP") {
         /*

@@ -19,7 +19,7 @@ void JetsonUART::begin() {
     xCmdQueue = xQueueCreate(1, sizeof(JetsonCmdType));
     configASSERT(xCmdQueue != nullptr);   // Halt nếu heap không đủ
 
-    // Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
+    Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
     clearRxBuffer();
     commandDoc.clear();
 
@@ -64,6 +64,10 @@ void JetsonUART::handleJetsonCommand() {
     if (!commandPending) return;
 
     commandDoc.clear();
+
+    #if defined(JETSON_UART_RAW_LOG) && JETSON_UART_RAW_LOG
+    Serial.printf("[JETSON] RX raw: %s\n", reinterpret_cast<const char*>(rxBuffer));
+    #endif
 
     const DeserializationError err = deserializeJson(commandDoc, reinterpret_cast<const char*>(rxBuffer));
     if (err) {
@@ -129,7 +133,7 @@ void JetsonUART::handleJetsonCommand() {
 }
 
 
-bool JetsonUART::processQueuedCommand() {
+bool JetsonUART::processQueuedCommand(bool allowOverride) {
     if (xCmdQueue == nullptr) return false;
  
     JetsonCmdType cmdType = JETSON_CMD_NONE;
@@ -137,6 +141,10 @@ bool JetsonUART::processQueuedCommand() {
     /* xQueueReceive với timeout=0 → không block vLogicTask */
     if (xQueueReceive(xCmdQueue, &cmdType, 0) != pdTRUE) {
         return false;   // Queue trống — không có lệnh mới
+    }
+
+    if (!allowOverride) {
+        return true;    // Drop command when Jetson override is not allowed
     }
  
     switch (cmdType) {
