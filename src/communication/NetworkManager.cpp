@@ -1,7 +1,3 @@
-/**
- * NetworkManager.cpp
- * Triển khai WiFi, HTTP và WebSocket cho ESP32.
- */
 
 #include "communication/NetworkManager.h"
 #include <Preferences.h>

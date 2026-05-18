@@ -123,9 +123,17 @@ void vLogicTask(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz
 
     for (;;) {
-        JetsonUART::processQueuedCommand();
+        OperationMode mode = UltrasonicSensor::getMode();
+        const bool autoMode = (mode == OperationMode::AUTONOMOUS);
+
+        JetsonUART::processQueuedCommand(autoMode);
         JetsonUART::checkWatchdog();
-        if (JetsonUART::isStopHoldActive()) {
+
+        if (!autoMode) {
+            JetsonUART::clearStopHold();
+        }
+
+        if (autoMode && JetsonUART::isStopHoldActive()) {
             MotorController::setTargetSpeed(0);
             MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
             MotorController::stopMotor();
@@ -135,7 +143,7 @@ void vLogicTask(void *pvParameters) {
         }
 
         // Chỉ chạy logic tự hành nếu đang ở chế độ AUTONOMOUS
-        if (UltrasonicSensor::getMode() == OperationMode::AUTONOMOUS) {
+        if (autoMode) {
             VehicleStateMachine::update();
         } else {
             // MANUAL mode: Vẫn cần cập nhật servo và motor để phản hồi lệnh
