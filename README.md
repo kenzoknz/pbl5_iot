@@ -12,7 +12,7 @@ Dự án PBL5 xây dựng một robot tự hành có khả năng di chuyển tro
 
 - **Jetson Nano (Xử lý AI):** Máy tính nhúng của NVIDIA chạy mô hình YOLO (You Only Look Once) để nhận diện đồ vật qua camera thời gian thực. Khi phát hiện vật thể nguy hiểm hoặc đồ vật bỏ quên, Jetson gửi lệnh STOP cho ESP32 qua giao thức UART (JSON, 115200 baud). Jetson hoạt động độc lập với WiFi, đảm bảo robot phản ứng ngay cả khi mất mạng.
 
-- **Web Server (Dashboard giám sát):** Giao diện web cho phép người dùng giám sát trạng thái robot theo thời gian thực, điều khiển robot từ xa qua joystick ảo, xem vị trí GPS trên bản đồ, và chuyển đổi giữa chế độ tự hành (AUTONOMOUS) và điều khiển thủ công (MANUAL). Giao tiếp với ESP32 qua WebSocket cho độ trễ thấp, có fallback sang HTTP polling khi WebSocket ngắt kết nối.
+- **Web Server (Dashboard giám sát):** Giao diện web cho phép người dùng giám sát trạng thái robot theo thời gian thực, điều khiển robot từ xa qua joystick ảo, xem vị trí GPS trên bản đồ, và chuyển đổi giữa chế độ tự hành (AUTONOMOUS) và điều khiển thủ công (MANUAL). Giao tiếp với ESP32 qua WebSocket cho độ trễ thấp, có fallback sang HTTP polling khi WebSocket ngắt kết nối. Mã nguồn web server: https://github.com/nguyenhieu126/Robot_Control_Web
 
 Robot có hai chế độ hoạt động chính:
 - **AUTONOMOUS (Tự hành):** Robot tự di chuyển, tránh vật cản bằng state machine với 11 trạng thái (NORMAL, SLOW, AVOID_LEFT, AVOID_RIGHT, TURN_LEFT, TURN_RIGHT, BACKING, STOP, EMERGENCY, MANUAL_CONTROL, ESCAPE). Nhận lệnh STOP từ Jetson khi phát hiện vật nguy hiểm.
@@ -320,11 +320,6 @@ Cấu hình trong `src/core/Config.h`:
 - [TinyGPS++](http://arduiniana.org/libraries/tinygpsplus/)
 - [Ultralytics YOLOv8](https://docs.ultralytics.com/)
 - [NVIDIA Jetson Nano](https://developer.nvidia.com/embedded/jetson-nano-developer-kit)
-
-**Tài liệu nội bộ dự án:**
-- Tích hợp Jetson-ESP32: `docs/integration/JETSON_ESP32_INTEGRATION.md`
-- Mô hình dữ liệu UART: `docs/guides/UART_DATA_MODEL.md`
-- Bảng tra cứu nhanh: `docs/guides/QUICK_REFERENCE.md`
 
 ---
 
