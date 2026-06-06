@@ -32,6 +32,12 @@ void setup() {
     }
     
     MotorController::begin();
+    RobotConfig bootConfig;
+    ConfigStorage::load(bootConfig);
+    ConfigStorage::printConfig(bootConfig, "[BOOT_CFG]");
+
+    MotorController::applyConfig(bootConfig);
+    VehicleStateMachine::applyConfig(bootConfig);
 
     // Encoder (PCNT hardware + task Core 1) 
     if (!EncoderSensor::begin()) {
@@ -127,7 +133,7 @@ void vLogicTask(void *pvParameters) {
         JetsonUART::checkWatchdog();
         if (JetsonUART::isStopHoldActive()) {
             MotorController::setTargetSpeed(0);
-            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
+            MotorController::setTargetSteerServoAngle(SERVO_CENTER);
             MotorController::stopMotor();
             MotorController::smoothSteerServoTransition();
             vTaskDelayUntil(&xLastWakeTime, xFrequency);

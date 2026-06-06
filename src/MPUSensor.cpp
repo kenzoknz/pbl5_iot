@@ -10,6 +10,9 @@ float MPUSensor::lastAccelMagnitude = 0;
 bool  MPUSensor::collisionFlag = false;
 bool  MPUSensor::tiltFlag = false;
 TaskHandle_t MPUSensor::mpuTaskHandle = NULL;
+static uint8_t collisionHitCount = 0;
+static uint32_t lastCollisionLogMs = 0;
+static uint32_t lastTiltLogMs = 0;
 
 SemaphoreHandle_t mpuMutex;
 
@@ -60,57 +63,53 @@ void MPUSensor::mpuTask(void *pvParameters) {
         float ay = mpu.getAccY();
         float az = mpu.getAccZ();
 
-        float accelMagnitude = sqrt(ax*ax + ay*ay + az*az);
-        float accelChange = abs(accelMagnitude - lastAccelMagnitude);
+        float accelMagnitude = sqrt(ax * ax + ay * ay + az * az);
+        float accelChange = fabsf(accelMagnitude - lastAccelMagnitude);
 
-        bool collision = (accelChange > COLLISION_THRESHOLD);
-        bool tilt = (abs(mpu.getAngleX()) > TILT_THRESHOLD ||
-                     abs(mpu.getAngleY()) > TILT_THRESHOLD);
+        bool rawCollision = (accelChange > COLLISION_THRESHOLD);
+
+        // Debounce: phải vượt ngưỡng ít nhất 3 mẫu liên tiếp
+        if (rawCollision) {
+            if (collisionHitCount < 3) collisionHitCount++;
+        } else {
+            collisionHitCount = 0;
+        }
+
+        bool collision = (collisionHitCount >= 3);
+
+        float angleX = mpu.getAngleX();
+        float angleY = mpu.getAngleY();
+
+        bool tilt = (fabsf(angleX) > TILT_THRESHOLD || fabsf(angleY) > TILT_THRESHOLD);
 
         xSemaphoreTake(mpuMutex, portMAX_DELAY);
 
-        currentAngleX = mpu.getAngleX();
-        currentAngleY = mpu.getAngleY();
+        currentAngleX = angleX;
+        currentAngleY = angleY;
         currentAccelY = ay;
         lastAccelMagnitude = accelMagnitude;
 
-        collisionFlag = collision;
+        if (collision) collisionFlag = true;
         tiltFlag = tilt;
-        if (collision) {
-            Serial.printf("[MPU] VA CHAM! delta=%.3f (nguong=%.3f)\n",
-                        accelChange, (float)COLLISION_THRESHOLD);
-        }
-        if (tilt) {
-            Serial.printf("[MPU] NGHIENG NGUY HIEM: X=%.1f° Y=%.1f°\n",
-                        mpu.getAngleX(), mpu.getAngleY());
-        }
 
         xSemaphoreGive(mpuMutex);
 
+        // Không Serial.print trong mutex
+        uint32_t now = millis();
+
+        if (collision && now - lastCollisionLogMs > 500) {
+            lastCollisionLogMs = now;
+            Serial.printf("[MPU] VA CHAM! delta=%.3f threshold=%.3f\n",
+                        accelChange, (float)COLLISION_THRESHOLD);
+        }
+
+        if (tilt && now - lastTiltLogMs > 500) {
+            lastTiltLogMs = now;
+            Serial.printf("[MPU] NGHIENG NGUY HIEM: X=%.1f Y=%.1f\n", angleX, angleY);
+        }
         vTaskDelay(sampleRate);
     }
 }
-
-// DEPRECATED: Không dùng khi mpuTask đang chạy.
-    // Giữ lại chỉ để tương thích ngược nếu cần test không có FreeRTOS.
-// void MPUSensor::update() {
-//     mpu.update();
-    
-//     // Đọc gia tốc (đơn vị: g)
-//     float ax = mpu.getAccX();
-//     float ay = mpu.getAccY();
-//     float az = mpu.getAccZ();
-    
-//     // Tính độ lớn gia tốc tổng
-//     float accelMagnitude = sqrt(ax * ax + ay * ay + az * az);
-    
-//     // Cập nhật dữ liệu
-//     currentAngleX = mpu.getAngleX();  // Nghiêng trái/phải
-//     currentAngleY = mpu.getAngleY();  // Nghiêng trước/sau
-//     currentAccelY = ay;               // Gia tốc ngang (ly tâm)
-    
-//     lastAccelMagnitude = accelMagnitude;
-// }
 
 bool MPUSensor::checkCollision() {
     bool flag;
@@ -121,24 +120,6 @@ bool MPUSensor::checkCollision() {
     return flag;
 }
 
-// bool MPUSensor::checkCollision() {
-//     mpu.update();
-    
-//     float ax = mpu.getAccX();
-//     float ay = mpu.getAccY();
-//     float az = mpu.getAccZ();
-//     float accelMagnitude = sqrt(ax * ax + ay * ay + az * az);
-    
-//     float accelChange = abs(accelMagnitude - lastAccelMagnitude);
-//     if (accelChange > COLLISION_THRESHOLD) {
-//         Serial.println("!!! VA CHAM PHAT HIEN !!!");
-//         lastAccelMagnitude = accelMagnitude;
-//         return true;
-//     }
-    
-//     lastAccelMagnitude = accelMagnitude;
-//     return false;
-// }
 
 bool MPUSensor::checkTilt() {
     bool flag;
@@ -148,14 +129,37 @@ bool MPUSensor::checkTilt() {
     return flag;
 }
 
-// bool MPUSensor::checkTilt() {
-//     if (abs(currentAngleX) > TILT_THRESHOLD || abs(currentAngleY) > TILT_THRESHOLD) {
-//         Serial.print("!!! NGHIENG NGUY HIEM: X=");
-//         Serial.print(currentAngleX);
-//         Serial.print("° Y=");
-//         Serial.print(currentAngleY);
-//         Serial.println("° !!!");
-//         return true;
-//     }
-//     return false;
-// }
+MpuSnapshot MPUSensor::getSnapshot() {
+    MpuSnapshot s;
+
+    xSemaphoreTake(mpuMutex, portMAX_DELAY);
+    s.angleX = currentAngleX;
+    s.angleY = currentAngleY;
+    s.accelY = currentAccelY;
+    s.collision = collisionFlag;
+    s.tilt = tiltFlag;
+    xSemaphoreGive(mpuMutex);
+
+    return s;
+}
+
+float MPUSensor::getCurrentAngleX() {
+    xSemaphoreTake(mpuMutex, portMAX_DELAY);
+    float value = currentAngleX;
+    xSemaphoreGive(mpuMutex);
+    return value;
+}
+
+float MPUSensor::getCurrentAngleY() {
+    xSemaphoreTake(mpuMutex, portMAX_DELAY);
+    float value = currentAngleY;
+    xSemaphoreGive(mpuMutex);
+    return value;
+}
+
+float MPUSensor::getCurrentAccelY() {
+    xSemaphoreTake(mpuMutex, portMAX_DELAY);
+    float value = currentAccelY;
+    xSemaphoreGive(mpuMutex);
+    return value;
+}

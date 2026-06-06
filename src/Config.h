@@ -1,13 +1,32 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#define LOG_LEVEL 1
+
+#if LOG_LEVEL >= 2
+#define LOG_DEBUG(...) Serial.printf(__VA_ARGS__)
+#else
+#define LOG_DEBUG(...)
+#endif
+
+#if LOG_LEVEL >= 1
+#define LOG_INFO(...) Serial.printf(__VA_ARGS__)
+#else
+#define LOG_INFO(...)
+#endif
+
 /* ================== SYSTEM & FREERTOS ================== */
 // Ưu tiên Task (Default: 0 (min) -> 24)
+// #define PRIORITY_MOTOR    5
+// #define PRIORITY_SENSORS  6
+// #define PRIORITY_JETSON   6 
+// #define PRIORITY_LOGIC    5
+// #define PRIORITY_APP      6 
 #define PRIORITY_MOTOR    5
-#define PRIORITY_SENSORS  6
-#define PRIORITY_JETSON   6 
-#define PRIORITY_LOGIC    5
-#define PRIORITY_APP      6 
+#define PRIORITY_SENSORS  5
+#define PRIORITY_JETSON   7   // STOP từ Jetson ưu tiên cao nhất
+#define PRIORITY_LOGIC    6   // State machine + output motor
+#define PRIORITY_APP      3   // WiFi/WebSocket không được tranh realtime
 
 // Thêm ngưỡng dừng khẩn cấp (Priority Break)
 #define EMERGENCY_STOP_DIST 10 
@@ -47,6 +66,15 @@
 /* ================== SERVO ================== */
 #define SERVO_STEER_PIN 23        // Servo lái bánh xe
 #define SERVO_STRAIGHT  90  // Góc servo thẳng (dùng trong JetsonUART stopHold)
+// Quy ước thống nhất toàn project:
+// servo > 90: rẽ trái
+// servo < 90: rẽ phải
+#define SERVO_CENTER     90
+#define SERVO_LEFT_MAX   135
+#define SERVO_RIGHT_MAX  45
+
+#define SERVO_LEFT_SOFT  110
+#define SERVO_RIGHT_SOFT 70
 
 /* ================== ULTRASONIC - 4 ================== */
 // Front - center
@@ -101,16 +129,16 @@
 /* ================== PWM ================== */
 #define PWM_CHANNEL_RPWM 0
 #define PWM_CHANNEL_LPWM 1
-#define PWM_FREQ 1000 // đề xuất 5000 để chạy êm
+#define PWM_FREQ 5000
 #define PWM_RESOLUTION 8
 
 /* ================== SPEED ================== */
 #define STOP_SPEED 0
-#define MIN_RUN_SPEED 150 // Tốc độ tối thiểu để thắng lực ma sát 190
-#define CRUISE_SPEED 70 // 3 tầng: 111, test 2 tầng 70
-#define FAST_SPEED 90 //3 tâng 250
-#define BACK_SPEED 170 // 3 tầng 220, 2 tầng cũ 150, test 170
-#define ESCAPE_SPEED 200        // [MỚI] Tốc độ xoay thoát bẫy
+#define MIN_RUN_SPEED 90
+#define CRUISE_SPEED 110
+#define FAST_SPEED 150
+#define BACK_SPEED 150
+#define ESCAPE_SPEED 170
 // Cần đủ cao để thắng ma sát khi xoay tại chỗ — đo thực tế
 
 #define SHARP_TURN_BOOST 220   // Cua gắt (góc 100-130°) - Tốc độ cao thắng ma sát

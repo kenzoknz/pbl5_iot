@@ -57,6 +57,8 @@ bool          CommandProcessor::_isHandlingWsMessage = false;
 bool          CommandProcessor::_joystickDriveActive = false;
 uint32_t      CommandProcessor::_lastQueueFlushTime = 0;
 bool          CommandProcessor::_queueFlushInProgress = false;
+bool          CommandProcessor::_timedMoveActive = false;
+uint32_t      CommandProcessor::_timedMoveEndTime = 0;
 
 // ══════════════════════════════════════════
 //  Init
@@ -72,13 +74,19 @@ void CommandProcessor::begin() {
 }
 
 void CommandProcessor::tickSafety() {
+    if (_timedMoveActive && millis() >= _timedMoveEndTime) {
+        MotorController::setTargetSpeed(0);
+        MotorController::setTargetSteerServoAngle(SERVO_CENTER);
+        _timedMoveActive = false;
+        Serial.println("[CMD] Timed MOVE ended -> STOP");
+    }
     if (_mode != MANUAL) return;
     if (!_joystickDriveActive) return;
 
     if (millis() - _lastJoystickInputTime > JOYSTICK_WATCHDOG_TIMEOUT_MS) {
         MotorController::stopMotor();
-        MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
         MotorController::setTargetSpeed(0);
+        MotorController::setTargetSteerServoAngle(SERVO_CENTER);
         _joystickDriveActive = false;
         Serial.println("[CMD] Joystick timeout -> STOP for safety");
     }
@@ -509,38 +517,31 @@ void CommandProcessor::processCommand(const JsonObject& cmd) {
 void CommandProcessor::applyManualCommand(const String& command, const JsonObject& params) {
 
     if (command == "MOVE") {
-        /*
-         * Tham số: direction (FORWARD|BACKWARD|LEFT|RIGHT), speed (0-255), duration_ms
-         * Ví dụ: { "direction": "FORWARD", "speed": 120, "duration_ms": 1000 }
-         */
         String dir      = params["direction"]   | "FORWARD";
         int    speed    = params["speed"]        | (int)MotorController::getConfig().cruiseSpeed;
         int    duration = params["duration_ms"]  | 0;
 
+        dir.toUpperCase();
         speed = constrain(speed, 0, 255);
 
         if (dir == "FORWARD") {
             MotorController::setTargetSpeed(speed);
-            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
-            MotorController::moveDifferential(speed, speed);
+            MotorController::setTargetSteerServoAngle(SERVO_CENTER);
             Serial.printf("[CMD] MOVE FORWARD speed=%d\n", speed);
 
         } else if (dir == "BACKWARD") {
             MotorController::setTargetSpeed(-speed);
-            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
-            MotorController::moveDifferential(-speed, -speed);
+            MotorController::setTargetSteerServoAngle(SERVO_CENTER);
             Serial.printf("[CMD] MOVE BACKWARD speed=%d\n", speed);
 
         } else if (dir == "LEFT") {
             MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_LEFT_MAX);
-            MotorController::moveDifferential(speed, speed);
             Serial.printf("[CMD] MOVE LEFT speed=%d\n", speed);
 
         } else if (dir == "RIGHT") {
             MotorController::setTargetSpeed(speed);
             MotorController::setTargetSteerServoAngle(SERVO_RIGHT_MAX);
-            MotorController::moveDifferential(speed, speed);
             Serial.printf("[CMD] MOVE RIGHT speed=%d\n", speed);
 
         } else {
@@ -548,22 +549,22 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
             return;
         }
 
-        // Nếu có duration — chạy rồi tự dừng
+        // Non-blocking duration
         if (duration > 0) {
-            vTaskDelay(pdMS_TO_TICKS(duration));
-            MotorController::stopMotor();
-            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
-            Serial.printf("[CMD] MOVE kết thúc sau %d ms\n", duration);
+            _timedMoveActive = true;
+            _timedMoveEndTime = millis() + (uint32_t)duration;
+        } else {
+            _timedMoveActive = false;
         }
-
     } else if (command == "STOP") {
         /*
          * Tham số: không cần
          * Dừng ngay lập tức, trả servo về thẳng
          */
-        MotorController::stopMotor();
-        MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
         MotorController::setTargetSpeed(0);
+        MotorController::setTargetSteerServoAngle(SERVO_CENTER);
+        MotorController::stopMotor();
+        _timedMoveActive = false;
         Serial.println("[CMD] STOP");
 
     } else if (command == "TURN") {
@@ -577,15 +578,17 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
 
         angle = constrain(angle, 0, 45);
 
+        dir.toUpperCase();
+
         if (dir == "LEFT") {
-            int servoAngle = constrain(SERVO_STRAIGHT - angle, SERVO_LEFT_MAX, SERVO_STRAIGHT);
+            int servoAngle = constrain(SERVO_CENTER + angle, SERVO_CENTER, SERVO_LEFT_MAX);
             MotorController::setTargetSteerServoAngle(servoAngle);
-            Serial.printf("[CMD] TURN LEFT angle=%d → servo=%d\n", angle, servoAngle);
+            Serial.printf("[CMD] TURN LEFT angle=%d -> servo=%d\n", angle, servoAngle);
 
         } else if (dir == "RIGHT") {
-            int servoAngle = constrain(SERVO_STRAIGHT + angle, SERVO_STRAIGHT, SERVO_RIGHT_MAX);
+            int servoAngle = constrain(SERVO_CENTER - angle, SERVO_RIGHT_MAX, SERVO_CENTER);
             MotorController::setTargetSteerServoAngle(servoAngle);
-            Serial.printf("[CMD] TURN RIGHT angle=%d → servo=%d\n", angle, servoAngle);
+            Serial.printf("[CMD] TURN RIGHT angle=%d -> servo=%d\n", angle, servoAngle);
 
         } else {
             Serial.printf("[CMD] TURN: direction không hợp lệ '%s'\n", dir.c_str());
@@ -619,16 +622,23 @@ void CommandProcessor::applyManualCommand(const String& command, const JsonObjec
         if (abs(spd) < 12 && abs(angle) < 4) {
             // Deadzone — dừng hẳn
             MotorController::stopMotor();
-            MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
             MotorController::setTargetSpeed(0);
+            MotorController::setTargetSteerServoAngle(SERVO_CENTER);
             _joystickDriveActive = false;
         } else {
-            // Đặt servo lái
-            int servoAngle = constrain(SERVO_STRAIGHT + angle, SERVO_LEFT_MAX, SERVO_RIGHT_MAX);
+            // Quy ước joystick:
+            // angle > 0: rẽ phải
+            // angle < 0: rẽ trái
+            int servoAngle = SERVO_CENTER;
+
+            if (angle < 0) {
+                servoAngle = constrain(SERVO_CENTER + abs(angle), SERVO_CENTER, SERVO_LEFT_MAX);
+            } else if (angle > 0) {
+                servoAngle = constrain(SERVO_CENTER - angle, SERVO_RIGHT_MAX, SERVO_CENTER);
+            }
+
             MotorController::setTargetSteerServoAngle(servoAngle);
-            // Điều khiển motor
             MotorController::setTargetSpeed(spd);
-            MotorController::moveDifferential(spd, spd);
             _joystickDriveActive = true;
         }
 
@@ -661,9 +671,9 @@ void CommandProcessor::setMode(OperationMode mode) {
         _joystickDriveActive = false;
     } else {
         // Dừng motor an toàn trước khi nhận lệnh thủ công
-        MotorController::stopMotor();
-        MotorController::setTargetSteerServoAngle(SERVO_STRAIGHT);
         MotorController::setTargetSpeed(0);
+        MotorController::setTargetSteerServoAngle(SERVO_CENTER);
+        MotorController::stopMotor();
         _lastJoystickInputTime = millis();
         _joystickDriveActive = false;
         Serial.println("[CMD] ══ Chuyển sang MANUAL ══");

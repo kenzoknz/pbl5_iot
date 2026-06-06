@@ -19,7 +19,7 @@ void JetsonUART::begin() {
     xCmdQueue = xQueueCreate(1, sizeof(JetsonCmdType));
     configASSERT(xCmdQueue != nullptr);   // Halt nếu heap không đủ
 
-    // Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
+    Serial1.begin(JETSON_UART_BAUD, SERIAL_8N1, ROS_RX_PIN, ROS_TX_PIN);
     clearRxBuffer();
     commandDoc.clear();
 
@@ -65,25 +65,33 @@ void JetsonUART::handleJetsonCommand() {
 
     commandDoc.clear();
 
+    String cmd;
+
+    // Cho phép dạng text nhanh: STOP\n, FORWARD\n
+    String rawLine(reinterpret_cast<const char*>(rxBuffer));
+    rawLine.trim();
+
     const DeserializationError err = deserializeJson(commandDoc, reinterpret_cast<const char*>(rxBuffer));
-    if (err) {
-        Serial.printf("[JETSON] Invalid JSON: %s\n", err.c_str());
-        commandPending = false;
-        clearRxBuffer();
-        return;
+
+    if (!err) {
+        const char* cmdRaw = commandDoc["cmd"];
+        if (cmdRaw != nullptr && cmdRaw[0] != '\0') {
+            cmd = String(cmdRaw);
+        }
+    } else {
+        // Nếu không phải JSON thì xử lý như lệnh text đơn giản
+        cmd = rawLine;
     }
 
-    const char* cmdRaw = commandDoc["cmd"];
-    if (cmdRaw == nullptr || cmdRaw[0] == '\0') {
-        Serial.println("[JETSON] Missing cmd field");
-        commandPending = false;
-        clearRxBuffer();
-        return;
-    }
-
-    String cmd(cmdRaw);
     cmd.trim();
     cmd.toUpperCase();
+
+    if (cmd.length() == 0) {
+        Serial.println("[JETSON] Empty command");
+        commandPending = false;
+        clearRxBuffer();
+        return;
+    }
 
     // A syntactically valid command line from Jetson keeps the link alive.
     lastCommandMillis = millis();
@@ -104,21 +112,6 @@ void JetsonUART::handleJetsonCommand() {
     } else {
         Serial.printf("[JETSON] Unknown cmd: '%s'\n", cmd.c_str());
     }
-
-    // if (cmd == "STOP") {
-    //     engageStopHold();
-    //     Serial.println("[JETSON] STOP received -> hold enabled");
-
-    // } else if (cmd == "FORWARD" || cmd == "AUTONOMOUS" || cmd == "RESUME") {
-    //     clearStopHold();
-    //     Serial.println("[JETSON] FORWARD received -> hold cleared");
-
-    // } else if (cmd == "MANUAL") {
-    //     Serial.println("[JETSON] MANUAL ignored (Jetson is limited to STOP/FORWARD)");
-
-    // } else {
-    //     Serial.printf("[JETSON] Unsupported cmd: %s\n", cmd.c_str());
-    // }
 
     if (cmdType != JETSON_CMD_NONE) {
         xQueueOverwrite(xCmdQueue, &cmdType);

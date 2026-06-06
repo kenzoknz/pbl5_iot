@@ -12,13 +12,14 @@ public:
     // Servo lái bánh xe
     static void smoothSteerServoTransition();
     static int getSteerServoAngle() { return steerServoAngle; }
-    static void setTargetSteerServoAngle(int angle) { targetSteerServoAngle = angle; }
+    static void setTargetSteerServoAngle(int angle);
+
     
     // Motor control
     static void limitSpeedBySteering();
     static void smoothSpeedTransition();
-    static void calculateDifferentialSteering(int baseSpeed);
-    static void moveDifferential(int leftSpeed, int rightSpeed);
+    static void driveMotor(int pwm);
+    static void moveDifferential(int leftSpeed, int rightSpeed); 
     static void stopMotor();
 
     // Speed control dựa trên Encoder 
@@ -29,7 +30,7 @@ public:
     static RobotConfig getConfig() { return runtimeConfig; }
     
     // Getters/Setters
-    static void setTargetSpeed(int speed) { targetSpeed = speed; }
+    static void setTargetSpeed(int speed);
     static int  getTargetSpeed()    { return targetSpeed; }
     static int  getCurrentSpeed()   { return currentSpeed; }
     static int  getRegulatedSpeed() { return regulatedSpeed; }  // Sau PID

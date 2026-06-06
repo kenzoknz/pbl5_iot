@@ -5,16 +5,25 @@
 #include <MPU6050_light.h>
 #include <Wire.h>
 
+struct MpuSnapshot {
+    float angleX;
+    float angleY;
+    float accelY;
+    bool collision;
+    bool tilt;
+};
+
 class MPUSensor {
 public:
     static bool begin();
     static void mpuTask(void *pvParameters);
     static void update();
-    static float getCurrentAngleX() { return currentAngleX; }
-    static float getCurrentAngleY() { return currentAngleY; }
-    static float getCurrentAccelY() { return currentAccelY; }
+    static float getCurrentAngleX();
+    static float getCurrentAngleY();
+    static float getCurrentAccelY();
     static bool checkCollision();
     static bool checkTilt();
+    static MpuSnapshot getSnapshot();
 
 private:
     static MPU6050 mpu;

@@ -23,10 +23,6 @@
 // ══════════════════════════════════════════
 //  Góc servo lái — chỉnh theo xe thực tế
 // ══════════════════════════════════════════
-#define SERVO_STRAIGHT    90    // Độ — đi thẳng
-#define SERVO_LEFT_MAX    55    // Độ — rẽ trái mạnh nhất
-#define SERVO_RIGHT_MAX  125    // Độ — rẽ phải mạnh nhất
-
 // Tần suất gửi status update qua WebSocket (ms)
 #define STATUS_INTERVAL_MS  1000
 
@@ -97,6 +93,9 @@ private:
     static bool          _joystickDriveActive;
     static uint32_t      _lastQueueFlushTime;
     static bool          _queueFlushInProgress;
+    static bool          _timedMoveActive;
+    static uint32_t      _timedMoveEndTime;
+    
 
     // ── Core ──
     static void processCommand(const JsonObject& cmd);
