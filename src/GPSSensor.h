@@ -16,7 +16,7 @@ typedef struct {
     float course_deg;
     int satellites;
     float hdop;
-    String gps_time_utc;
+    char gps_time_utc[32];
     uint32_t updated_at_ms;
 } GpsData;
 
@@ -31,7 +31,7 @@ private:
     static GpsData _data;
     static portMUX_TYPE _dataMux;
 
-    static String buildIsoTime();
+    static bool buildIsoTime(char* out, size_t outSize);
     static bool validCoordinates(double lat, double lng);
 };
 

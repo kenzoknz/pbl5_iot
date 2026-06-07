@@ -251,7 +251,9 @@ void NetworkManager::wsSend(const String& jsonStr) {
     if (_wsConnected) {
         String payload = jsonStr;
         _ws.sendTXT(payload);
-        Serial.printf("[WS] Sent: %s\n", jsonStr.c_str());
+        #if LOG_LEVEL >= 2
+        Serial.printf("[WS] Sent len=%u\n", jsonStr.length());
+        #endif
     } else {
         Serial.println("[WS] Skip send — chưa kết nối");
     }

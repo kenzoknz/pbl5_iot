@@ -406,7 +406,7 @@ void CommandProcessor::sendStatusUpdate() {
     gps["course_deg"] = gpsData.course_deg;
     gps["satellites"] = gpsData.satellites;
     gps["hdop"] = gpsData.hdop;
-    if (gpsData.gps_time_utc.length() > 0) {
+    if (gpsData.gps_time_utc[0] != '\0') {
         gps["gps_time_utc"] = gpsData.gps_time_utc;
     } else {
         gps["gps_time_utc"] = nullptr;

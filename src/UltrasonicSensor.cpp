@@ -4,8 +4,7 @@
 #include <algorithm>
 
 // ================== STATIC MEMBERS ==================
-TaskHandle_t UltrasonicSensor::frontGroupTaskHandle = NULL;
-TaskHandle_t UltrasonicSensor::backTaskHandle       = NULL;
+TaskHandle_t UltrasonicSensor::sensorTaskHandle = NULL;
 OperationMode UltrasonicSensor::currentMode = OperationMode::AUTONOMOUS;
 volatile bool UltrasonicSensor::tasksEnabled = true;
 
@@ -65,26 +64,17 @@ void UltrasonicSensor::begin() {
         while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
     
-    // ── 1 Task cho 3 cảm biến trước (Sequential Polling) ──
-    // Stack: 3072 bytes đủ cho 3x pulseIn + median sort + EMA
-    // (giảm từ 4096*3 = 12KB xuống 3072 = 3KB → tiết kiệm 9KB RAM)
     xTaskCreatePinnedToCore(
-        frontGroupSensorTask, "FrontGroup",
-        3072,                       // Đủ cho sequential 3 cảm biến
-        NULL, PRIORITY_SENSORS,
-        &frontGroupTaskHandle, 0    // Core 0
+        sensorTask,
+        "UltrasonicTask",
+        4096,
+        NULL,
+        PRIORITY_SENSORS,
+        &sensorTaskHandle,
+        0
     );
 
-    // ── 1 Task cho cảm biến sau ──
-    // Stack: 2048 bytes cho 1 cảm biến
-    xTaskCreatePinnedToCore(
-        backSensorTask, "BackSensor",
-        2048,
-        NULL, PRIORITY_SENSORS,
-        &backTaskHandle, 0          // Core 0
-    );
-
-    Serial.println("[SENSOR] 2 tasks for 4 sensors (Front Group + Back)");
+    Serial.println("[SENSOR] 1 task for 4 sensors (Front Group + Back)");
 }
 
 
@@ -154,76 +144,19 @@ long UltrasonicSensor::readDistanceRaw(int trig, int echo) {
     digitalWrite(trig, LOW);
 
     long duration = pulseIn(echo, HIGH, MAX_DIST_TIMEOUT);
+
+    // Không có echo: giữ 999 nhưng phải hiểu là UNKNOWN.
+    // State machine nên thận trọng với cảm biến trước nếu liên tục 999.
     if (duration == 0) return 999;
 
-    long dist = duration * 0.034 / 2;
-    return (dist < 2 || dist > 400) ? 999 : dist;
+    long dist = duration * 0.034f / 2.0f;
+
+    if (dist < 2 || dist > 300) {
+        return 999;
+    }
+
+    return dist;
 }
-
-// // ================== BUFFER UPDATES ==================
-// void UltrasonicSensor::updateFrontBuffer() {
-//     if (millis() - lastFrontTrigger < US_UPDATE_RATE_MS) return;
-//     lastFrontTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][FRONT] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     frontBuffer[frontIndex] = dist;
-//     frontIndex = (frontIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
-
-// void UltrasonicSensor::updateRightBuffer() {
-//     if (millis() - lastRightTrigger < US_UPDATE_RATE_MS) return;
-//     lastRightTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_RIGHT, ECHO_RIGHT);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][RIGHT] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     rightBuffer[rightIndex] = dist;
-//     rightIndex = (rightIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
-
-// void UltrasonicSensor::updateLeftBuffer() {
-//     if (millis() - lastLeftTrigger < US_UPDATE_RATE_MS) return;
-//     lastLeftTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_LEFT, ECHO_LEFT);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][LEFT] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     leftBuffer[leftIndex] = dist;
-//     leftIndex = (leftIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
-
-// void UltrasonicSensor::updateBackBuffer() {
-//     if (millis() - lastBackTrigger < US_UPDATE_RATE_MS) return;
-//     lastBackTrigger = millis();
-
-//     long dist = readDistanceRaw(TRIG_BACK, ECHO_BACK);
-
-//     #ifdef DEBUG_SENSOR
-//         Serial.printf("[US][BACK] raw=%ld cm\n", dist);
-//     #endif
-
-//     xSemaphoreTake(sensorMutex, portMAX_DELAY);
-//     backBuffer[backIndex] = dist;
-//     backIndex = (backIndex + 1) % BUFFER_SIZE;
-//     xSemaphoreGive(sensorMutex);
-// }
 
 // ================= MEDIAN FILTER ======================
 long UltrasonicSensor::getMedian(long *buffer) {
@@ -273,78 +206,44 @@ long UltrasonicSensor::applyAdaptiveFilter(long rawDist, long *buffer, int &inde
     return (long)(emaValue + 0.5f); // Làm tròn
 }
 
-// ================== FRONT GROUP TASK ==================
-// Sequential Polling: LEFT → FRONT → RIGHT
-// Đảm bảo KHÔNG BAO GIỜ 2 cảm biến trước bắn sóng cùng lúc
-//
-// Timing analysis:
-//   pulseIn worst case: ~15ms (MAX_DIST_TIMEOUT / 1000)
-//   3 sensors × 15ms = 45ms
-//   + 2 × 3ms gaps = 6ms
-//   Total max: ~51ms < 60ms → vừa khít 1 chu kỳ
-//   Best case (vật cản gần): 3 × 2ms + 6ms = 12ms
-void UltrasonicSensor::frontGroupSensorTask(void *pvParameters) {
+void UltrasonicSensor::sensorTask(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xPeriod = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
+
+    // 4 cảm biến, mỗi cảm biến cách nhau 25ms.
+    // Một vòng ~100ms => mỗi cảm biến ~10Hz, đủ cho robot tự hành.
+    const TickType_t xPeriod = pdMS_TO_TICKS(100);
 
     for (;;) {
-        // Kiểm tra cờ enable trước khi đọc sensors (tránh deadlock khi chuyển mode)
         if (!tasksEnabled) {
             vTaskDelayUntil(&xLastWakeTime, xPeriod);
             continue;
         }
 
-        // ── 1. Quét LEFT ──
-        long rawLeft = readDistanceRaw(TRIG_LEFT, ECHO_LEFT);
-
-        // Chờ sóng âm tiêu tán (~3ms đủ, sóng âm 340m/s × 3ms = 1m)
-        // Không dùng vTaskDelay(5) vì 5ms tick resolution có thể thành 10ms
-        delayMicroseconds(3000);
-
-        // ── 2. Quét FRONT (ưu tiên cao nhất — cảm biến quan trọng nhất) ──
         long rawFront = readDistanceRaw(TRIG_FRONT, ECHO_FRONT);
-        delayMicroseconds(3000);
+        vTaskDelay(pdMS_TO_TICKS(25));
 
-        // ── 3. Quét RIGHT ──
+        long rawLeft = readDistanceRaw(TRIG_LEFT, ECHO_LEFT);
+        vTaskDelay(pdMS_TO_TICKS(25));
+
         long rawRight = readDistanceRaw(TRIG_RIGHT, ECHO_RIGHT);
-
-        // ── 4. Ghi tất cả vào buffer + filter (1 lần lock duy nhất) ──
-        xSemaphoreTake(frontGroupMutex, portMAX_DELAY);
-        applyAdaptiveFilter(rawLeft,  leftBuffer,  leftIndex, emaLeft);
-        applyAdaptiveFilter(rawFront, frontBuffer, frontIndex, emaFront);
-        applyAdaptiveFilter(rawRight, rightBuffer, rightIndex, emaRight);
-        xSemaphoreGive(frontGroupMutex);
-
-        #ifdef DEBUG_SENSOR
-        Serial.printf("[US] L:%ld F:%ld R:%ld | EMA L:%.0f F:%.0f R:%.0f\n",
-                      rawLeft, rawFront, rawRight, emaLeft, emaFront, emaRight);
-        #endif
-
-        // Đợi chu kỳ tiếp theo (60ms tính từ đầu chu kỳ)
-        vTaskDelayUntil(&xLastWakeTime, xPeriod);
-    }
-}
-
-// ================== BACK SENSOR TASK ==================
-void UltrasonicSensor::backSensorTask(void *pvParameters) {
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xPeriod = pdMS_TO_TICKS(US_UPDATE_RATE_MS);
-
-    for (;;) {
-        // Kiểm tra cờ enable trước khi đọc sensors
-        if (!tasksEnabled) {
-            vTaskDelayUntil(&xLastWakeTime, xPeriod);
-            continue;
-        }
+        vTaskDelay(pdMS_TO_TICKS(25));
 
         long rawBack = readDistanceRaw(TRIG_BACK, ECHO_BACK);
+
+        xSemaphoreTake(frontGroupMutex, portMAX_DELAY);
+        applyAdaptiveFilter(rawFront, frontBuffer, frontIndex, emaFront);
+        applyAdaptiveFilter(rawLeft,  leftBuffer,  leftIndex,  emaLeft);
+        applyAdaptiveFilter(rawRight, rightBuffer, rightIndex, emaRight);
+        xSemaphoreGive(frontGroupMutex);
 
         xSemaphoreTake(backMutex, portMAX_DELAY);
         applyAdaptiveFilter(rawBack, backBuffer, backIndex, emaBack);
         xSemaphoreGive(backMutex);
 
         #ifdef DEBUG_SENSOR
-        Serial.printf("[US] B:%ld | EMA B:%.0f\n", rawBack, emaBack);
+        Serial.printf("[US] F:%ld L:%ld R:%ld B:%ld | EMA F:%.0f L:%.0f R:%.0f B:%.0f\n",
+                      rawFront, rawLeft, rawRight, rawBack,
+                      emaFront, emaLeft, emaRight, emaBack);
         #endif
 
         vTaskDelayUntil(&xLastWakeTime, xPeriod);

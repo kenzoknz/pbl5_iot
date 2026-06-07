@@ -70,7 +70,7 @@ void GPSSensor::update() {
     next.course_deg = _gps.course.isValid() ? _gps.course.deg() : 0.0f;
     next.satellites = _gps.satellites.isValid() ? static_cast<int>(_gps.satellites.value()) : 0;
     next.hdop = _gps.hdop.isValid() ? _gps.hdop.hdop() : 0.0f;
-    next.gps_time_utc = buildIsoTime();
+    buildIsoTime(next.gps_time_utc, sizeof(next.gps_time_utc));
 
     if (!next.fix) {
         next.lat = 0.0;
@@ -155,15 +155,20 @@ GpsData GPSSensor::getData() {
     return copy;
 }
 
-String GPSSensor::buildIsoTime() {
-    if (!_gps.date.isValid() || !_gps.time.isValid()) {
-        return "";
+bool GPSSensor::buildIsoTime(char* out, size_t outSize) {
+    if (out == nullptr || outSize == 0) {
+        return false;
     }
 
-    char buf[32];
+    out[0] = '\0';
+
+    if (!_gps.date.isValid() || !_gps.time.isValid()) {
+        return false;
+    }
+
     snprintf(
-        buf,
-        sizeof(buf),
+        out,
+        outSize,
         "%04d-%02d-%02dT%02d:%02d:%02dZ",
         _gps.date.year(),
         _gps.date.month(),
@@ -172,7 +177,8 @@ String GPSSensor::buildIsoTime() {
         _gps.time.minute(),
         _gps.time.second()
     );
-    return String(buf);
+
+    return true;
 }
 
 bool GPSSensor::validCoordinates(double lat, double lng) {

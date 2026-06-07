@@ -22,11 +22,11 @@
 // #define PRIORITY_JETSON   6 
 // #define PRIORITY_LOGIC    5
 // #define PRIORITY_APP      6 
-#define PRIORITY_MOTOR    5
-#define PRIORITY_SENSORS  5
-#define PRIORITY_JETSON   7   // STOP từ Jetson ưu tiên cao nhất
-#define PRIORITY_LOGIC    6   // State machine + output motor
-#define PRIORITY_APP      3   // WiFi/WebSocket không được tranh realtime
+#define PRIORITY_JETSON   7
+#define PRIORITY_LOGIC    6
+#define PRIORITY_MPU      5
+#define PRIORITY_SENSORS  4
+#define PRIORITY_APP      3
 
 // Thêm ngưỡng dừng khẩn cấp (Priority Break)
 #define EMERGENCY_STOP_DIST 10 

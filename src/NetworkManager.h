@@ -19,7 +19,8 @@
 #define WIFI_SSID_DEFAULT     "S-Group"        // Tên WiFi mặc định
 #define WIFI_PASS_DEFAULT     "sgroup11235"
 
-#define SERVER_HOST          "pbl5.ddns.net"   // IP server (không có http://)
+// #define SERVER_HOST          "pbl5.ddns.net"   // IP server (không có http://)
+#define SERVER_HOST "192.168.1.26"
 #define SERVER_PORT          5000
 #define BASE_URL             "http://" SERVER_HOST ":" "5000"
 
@@ -36,7 +37,7 @@
 #define POLL_INTERVAL_AUTO    2000      // ms — polling chậm khi AUTONOMOUS
 #define MAX_BACKOFF_MS       60000      // ms — backoff tối đa khi mất WiFi
 #define WIFI_TIMEOUT_MS      15000      // ms — timeout kết nối WiFi ban đầu
-#define HTTP_TIMEOUT_MS       8000      // ms — timeout HTTP request
+#define HTTP_TIMEOUT_MS       1200      // ms — timeout HTTP request
 
 // Kiểu callback nhận message từ WebSocket
 typedef void (*WsMessageCb)(const String& message);

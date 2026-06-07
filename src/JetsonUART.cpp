@@ -94,17 +94,17 @@ void JetsonUART::handleJetsonCommand() {
     }
 
     // A syntactically valid command line from Jetson keeps the link alive.
-    lastCommandMillis = millis();
+    
     JetsonCmdType cmdType = JETSON_CMD_NONE;
 
-    if (cmd == "STOP") {
+    if (cmd == "STOP" || cmd == "S") {
         cmdType = JETSON_CMD_STOP;
         Serial.println("[JETSON] Enqueue: STOP");
- 
-    } else if (cmd == "FORWARD" || cmd == "AUTONOMOUS" || cmd == "RESUME") {
+
+    } else if (cmd == "FORWARD" || cmd == "F" || cmd == "AUTONOMOUS" || cmd == "RESUME") {
         cmdType = JETSON_CMD_FORWARD;
         Serial.println("[JETSON] Enqueue: FORWARD");
- 
+        
     } else if (cmd == "MANUAL") {
         /* MANUAL từ Jetson bị bỏ qua — Jetson chỉ dùng STOP/FORWARD */
         Serial.println("[JETSON] MANUAL ignored (Jetson only: STOP/FORWARD)");
@@ -114,6 +114,7 @@ void JetsonUART::handleJetsonCommand() {
     }
 
     if (cmdType != JETSON_CMD_NONE) {
+        lastCommandMillis = millis();
         xQueueOverwrite(xCmdQueue, &cmdType);
     }
 

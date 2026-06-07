@@ -32,16 +32,12 @@ public:
     static long readDistanceRaw(int trig, int echo);
 
 private:
-
-    // 2 Tasks: 1 cho 3 cảm biến trước (sequential), 1 cho sau
-    static TaskHandle_t frontGroupTaskHandle;
-    static TaskHandle_t backTaskHandle;
+    static TaskHandle_t sensorTaskHandle;
     static OperationMode currentMode;
     static volatile bool tasksEnabled;  // Cờ để enable/disable sensor reading an toàn
 
     // FreeRTOS Tasks — chạy trên Core 0
-    static void frontGroupSensorTask(void *pvParameters);
-    static void backSensorTask(void *pvParameters);
+    static void sensorTask(void *pvParameters);
 
     // Buffer updates
     static void updateFrontBuffer();
